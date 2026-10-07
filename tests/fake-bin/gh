@@ -1,0 +1,147 @@
+#!/bin/bash
+# shellcheck disable=SC2016  # jq programs use $variables in single quotes on purpose
+#
+# Fake `gh` for the test suite. Implements only the calls
+# gh-dashboard makes, driven by environment variables:
+#
+#   FAKE_ACCOUNTS     "login:token[:active] ..."   logged-in accounts
+#   FAKE_REPO         nameWithOwner returned by `gh repo view`
+#   FAKE_REPO_TOKEN   only this token can see the repo (default: any)
+#   FAKE_PRS          JSON file: array of PullRequest search nodes
+#   FAKE_FAIL_FIRST   fail the first N graphql calls with HTTP 504
+#   FAKE_STATE_DIR    scratch dir for call counters
+#   FAKE_LOG          every call is appended here, one per line
+#
+# GH_TOKEN, as with the real gh, overrides the active account.
+
+set -euo pipefail
+
+echo "gh $*" >> "${FAKE_LOG:-/dev/null}"
+
+# Real gh evaluates --jq with a built-in engine that writes LF;
+# strip CR in case the system jq is the Windows build.
+jqlf() { jq "$@" | tr -d '\r'; }
+
+# Pull the value following a flag out of "$@".
+arg() {
+    local want="$1"; shift
+    while [[ $# -gt 0 ]]; do
+        if [[ "$1" == "$want" ]]; then echo "$2"; return; fi
+        shift
+    done
+    return 0
+}
+
+# Pull "key=value" given via -f/-F out of "$@".
+field() {
+    local key="$1"; shift
+    local a
+    for a in "$@"; do
+        [[ "$a" == "$key="* ]] && { echo "${a#*=}"; return; }
+    done
+    return 0
+}
+
+active_login() {
+    local entry
+    for entry in ${FAKE_ACCOUNTS:-}; do
+        [[ "$entry" == *:active ]] && { echo "${entry%%:*}"; return; }
+    done
+    return 0
+}
+
+token_for() {
+    local entry
+    for entry in ${FAKE_ACCOUNTS:-}; do
+        [[ "${entry%%:*}" == "$1" ]] && { entry="${entry#*:}"; echo "${entry%%:*}"; return; }
+    done
+    return 0
+}
+
+login_for_token() {
+    local entry rest
+    for entry in ${FAKE_ACCOUNTS:-}; do
+        rest="${entry#*:}"
+        [[ "${rest%%:*}" == "$1" ]] && { echo "${entry%%:*}"; return; }
+    done
+    return 0
+}
+
+current_token() {
+    if [[ -n "${GH_TOKEN:-}" ]]; then echo "$GH_TOKEN"; else token_for "$(active_login)"; fi
+}
+
+with_jq() {
+    # Apply --jq <expr> if the caller passed one.
+    local expr; expr=$(arg --jq "$@")
+    if [[ -n "$expr" ]]; then jqlf -r "$expr"; else cat; fi
+}
+
+case "${1:-} ${2:-}" in
+
+    "repo view")
+        if [[ -z "${FAKE_REPO:-}" ]] ||
+           [[ -n "${FAKE_REPO_TOKEN:-}" && "$(current_token)" != "$FAKE_REPO_TOKEN" ]]; then
+            echo "GraphQL: Could not resolve to a Repository with the name '${FAKE_REPO:-owner/repo}'. (repository)" >&2
+            exit 1
+        fi
+        jqlf -n --arg r "$FAKE_REPO" '{nameWithOwner: $r}' | with_jq "$@"
+        ;;
+
+    "auth status")
+        hosts='[]'
+        for entry in ${FAKE_ACCOUNTS:-}; do
+            hosts=$(jqlf -c --arg l "${entry%%:*}" --argjson a "$([[ "$entry" == *:active ]] && echo true || echo false)" \
+                '. + [{login: $l, active: $a, host: "github.com", state: "success"}]' <<< "$hosts")
+        done
+        jqlf -n --argjson h "$hosts" '{hosts: {"github.com": $h}}' | with_jq "$@"
+        ;;
+
+    "auth token")
+        user=$(arg --user "$@")
+        token=$(token_for "${user:-$(active_login)}")
+        [[ -z "$token" ]] && { echo "no oauth token found for $user" >&2; exit 1; }
+        echo "$token"
+        ;;
+
+    "auth switch")
+        echo "fake gh: tests must never switch the active account" >&2
+        exit 1
+        ;;
+
+    "api user")
+        jqlf -n --arg l "$(login_for_token "$(current_token)")" '{login: $l}' | with_jq "$@"
+        ;;
+
+    "api graphql")
+        state="${FAKE_STATE_DIR:?FAKE_STATE_DIR must be set}"
+        calls=$(( $(cat "$state/graphql-calls" 2>/dev/null || echo 0) + 1 ))
+        echo "$calls" > "$state/graphql-calls"
+
+        first=$(field first "$@")
+        after=$(field after "$@")
+        echo "graphql first=$first after=${after:-none} q=$(field q "$@")" >> "${FAKE_LOG:-/dev/null}"
+
+        if [[ "$calls" -le "${FAKE_FAIL_FIRST:-0}" ]]; then
+            echo "HTTP 504: 504 Gateway Timeout (https://api.github.com/graphql)" >&2
+            exit 1
+        fi
+
+        # Cursors are plain offsets into the fixture array.
+        jqlf -c --argjson first "$first" --argjson offset "${after:-0}" '
+            (length) as $total
+            | {data: {search: {
+                pageInfo: {
+                    hasNextPage: ($offset + $first < $total),
+                    endCursor: (($offset + $first) | tostring)
+                },
+                nodes: .[$offset : $offset + $first]
+              }}}
+        ' "${FAKE_PRS:?FAKE_PRS must be set}"
+        ;;
+
+    *)
+        echo "fake gh: unsupported call: gh $*" >&2
+        exit 2
+        ;;
+esac

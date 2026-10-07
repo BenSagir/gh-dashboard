@@ -1,0 +1,123 @@
+[
+  {
+    "number": 101, "title": "Add login page", "url": "https://github.com/acme/widgets/pull/101",
+    "isDraft": false, "reviewDecision": null, "mergeable": "MERGEABLE", "mergeStateStatus": "CLEAN",
+    "author": {"login": "alice"},
+    "reviewRequests": {"nodes": []},
+    "latestReviews": {"nodes": []},
+    "commits": {"nodes": [{"commit": {"statusCheckRollup": {"state": "SUCCESS"}}}]}
+  },
+  {
+    "number": 102, "title": "Fix flaky test", "url": "https://github.com/acme/widgets/pull/102",
+    "isDraft": false, "reviewDecision": "REVIEW_REQUIRED", "mergeable": "MERGEABLE", "mergeStateStatus": "BLOCKED",
+    "author": {"login": "bob"},
+    "reviewRequests": {"nodes": [{"requestedReviewer": {"login": "carol"}}]},
+    "latestReviews": {"nodes": [{"author": {"login": "dave"}, "state": "APPROVED"}]},
+    "commits": {"nodes": [{"commit": {"statusCheckRollup": {"state": "SUCCESS"}}}]}
+  },
+  {
+    "number": 103, "title": "Refactor API client", "url": "https://github.com/acme/widgets/pull/103",
+    "isDraft": false, "reviewDecision": "CHANGES_REQUESTED", "mergeable": "MERGEABLE", "mergeStateStatus": "BLOCKED",
+    "author": {"login": "carol"},
+    "reviewRequests": {"nodes": []},
+    "latestReviews": {"nodes": [
+      {"author": {"login": "alice"}, "state": "CHANGES_REQUESTED"},
+      {"author": {"login": "bob"}, "state": "COMMENTED"}
+    ]},
+    "commits": {"nodes": [{"commit": {"statusCheckRollup": {"state": "SUCCESS"}}}]}
+  },
+  {
+    "number": 104, "title": "Update dependencies", "url": "https://github.com/acme/widgets/pull/104",
+    "isDraft": true, "reviewDecision": "REVIEW_REQUIRED", "mergeable": "MERGEABLE", "mergeStateStatus": "DRAFT",
+    "author": {"login": "dependabot"},
+    "reviewRequests": {"nodes": []},
+    "latestReviews": {"nodes": []},
+    "commits": {"nodes": [{"commit": {"statusCheckRollup": {"state": "PENDING"}}}]}
+  },
+  {
+    "number": 105, "title": "Rename config keys", "url": "https://github.com/acme/widgets/pull/105",
+    "isDraft": false, "reviewDecision": "REVIEW_REQUIRED", "mergeable": "CONFLICTING", "mergeStateStatus": "DIRTY",
+    "author": {"login": "dave"},
+    "reviewRequests": {"nodes": []},
+    "latestReviews": {"nodes": []},
+    "commits": {"nodes": [{"commit": {"statusCheckRollup": {"state": "FAILURE"}}}]}
+  },
+  {
+    "number": 106, "title": "Broken build", "url": "https://github.com/acme/widgets/pull/106",
+    "isDraft": false, "reviewDecision": "APPROVED", "mergeable": "MERGEABLE", "mergeStateStatus": "UNSTABLE",
+    "author": {"login": "alice"},
+    "reviewRequests": {"nodes": []},
+    "latestReviews": {"nodes": []},
+    "commits": {"nodes": [{"commit": {"statusCheckRollup": {"state": "ERROR"}}}]}
+  },
+  {
+    "number": 107, "title": "Waiting on CI", "url": "https://github.com/acme/widgets/pull/107",
+    "isDraft": false, "reviewDecision": "APPROVED", "mergeable": "MERGEABLE", "mergeStateStatus": "BLOCKED",
+    "author": {"login": "bob"},
+    "reviewRequests": {"nodes": []},
+    "latestReviews": {"nodes": [{"author": {"login": "carol"}, "state": "APPROVED"}]},
+    "commits": {"nodes": [{"commit": {"statusCheckRollup": {"state": "EXPECTED"}}}]}
+  },
+  {
+    "number": 108, "title": "No CI configured", "url": "https://github.com/acme/widgets/pull/108",
+    "isDraft": false, "reviewDecision": "APPROVED", "mergeable": "MERGEABLE", "mergeStateStatus": "BLOCKED",
+    "author": {"login": "carol"},
+    "reviewRequests": {"nodes": []},
+    "latestReviews": {"nodes": []},
+    "commits": {"nodes": [{"commit": {"statusCheckRollup": null}}]}
+  },
+  {
+    "number": 109, "title": "Team review requested", "url": "https://github.com/acme/widgets/pull/109",
+    "isDraft": false, "reviewDecision": "REVIEW_REQUIRED", "mergeable": "MERGEABLE", "mergeStateStatus": "BLOCKED",
+    "author": {"login": "dave"},
+    "reviewRequests": {"nodes": [{"requestedReviewer": {"name": "frontend-team"}}, {"requestedReviewer": null}]},
+    "latestReviews": {"nodes": []},
+    "commits": {"nodes": [{"commit": {"statusCheckRollup": {"state": "SUCCESS"}}}]}
+  },
+  {
+    "number": 110, "title": "This pull request has a deliberately very long title that must be truncated",
+    "url": "https://github.com/acme/widgets/pull/110",
+    "isDraft": false, "reviewDecision": "REVIEW_REQUIRED", "mergeable": "MERGEABLE", "mergeStateStatus": "BLOCKED",
+    "author": {"login": "a-very-long-username-indeed"},
+    "reviewRequests": {"nodes": [
+      {"requestedReviewer": {"login": "reviewer-number-one"}},
+      {"requestedReviewer": {"login": "reviewer-number-two"}},
+      {"requestedReviewer": {"login": "reviewer-number-three"}}
+    ]},
+    "latestReviews": {"nodes": []},
+    "commits": {"nodes": [{"commit": {"statusCheckRollup": {"state": "SUCCESS"}}}]}
+  },
+  {
+    "number": 111, "title": "Café menu — תפריט עברית", "url": "https://github.com/acme/widgets/pull/111",
+    "isDraft": false, "reviewDecision": null, "mergeable": "MERGEABLE", "mergeStateStatus": "CLEAN",
+    "author": {"login": "alice"},
+    "reviewRequests": {"nodes": []},
+    "latestReviews": {"nodes": [{"author": {"login": "bob"}, "state": "COMMENTED"}]},
+    "commits": {"nodes": [{"commit": {"statusCheckRollup": {"state": "SUCCESS"}}}]}
+  },
+  {
+    "number": 112, "title": "🚀 Ship it 🚀", "url": "https://github.com/acme/widgets/pull/112",
+    "isDraft": false, "reviewDecision": null, "mergeable": "MERGEABLE", "mergeStateStatus": "CLEAN",
+    "author": {"login": "bob"},
+    "reviewRequests": {"nodes": []},
+    "latestReviews": {"nodes": []},
+    "commits": {"nodes": [{"commit": {"statusCheckRollup": {"state": "SUCCESS"}}}]}
+  },
+  {
+    "number": 113, "title": "PR from a deleted account", "url": "https://github.com/acme/widgets/pull/113",
+    "isDraft": false, "reviewDecision": null, "mergeable": "MERGEABLE", "mergeStateStatus": "CLEAN",
+    "author": null,
+    "reviewRequests": {"nodes": []},
+    "latestReviews": {"nodes": []},
+    "commits": {"nodes": [{"commit": {"statusCheckRollup": {"state": "SUCCESS"}}}]}
+  },
+  {
+    "number": 114, "title": "Mergeability still computing", "url": "https://github.com/acme/widgets/pull/114",
+    "isDraft": false, "reviewDecision": null, "mergeable": "UNKNOWN", "mergeStateStatus": "UNKNOWN",
+    "author": {"login": "carol"},
+    "reviewRequests": {"nodes": []},
+    "latestReviews": {"nodes": []},
+    "commits": {"nodes": [{"commit": {"statusCheckRollup": {"state": "SUCCESS"}}}]}
+  },
+  {}
+]

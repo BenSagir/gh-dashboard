@@ -1,0 +1,870 @@
+#!/bin/bash
+
+set -euo pipefail
+
+# ============================================================
+# GitHub PR Dashboard
+#
+# Requirements:
+#   gh (logged in), jq, git, perl
+#   Windows: run from Git Bash (ships bash, git and perl)
+#
+# Usage (as a gh extension, or directly as gh-dashboard):
+#   gh dashboard
+#   gh dashboard --all
+#   gh dashboard --mine
+#   gh dashboard --review
+#
+# Environment:
+#   GH_DASHBOARD_LIMIT=200
+#   GH_DASHBOARD_BATCH=20
+#   NO_COLOR=1           disable colors and links
+#   CLICOLOR_FORCE=1     keep colors when piping (e.g. to less -R)
+#
+# Docs: https://github.com/BenSagir/gh-dashboard
+# ============================================================
+
+VERSION="1.0.0"
+
+
+# ------------------------------------------------------------
+# Windows
+#
+# jq.exe writes CRLF line endings. A trailing \r breaks
+# comparisons ("true\r" != "true"), titles and the paging
+# cursor, so strip it. Only defined on Windows shells.
+# ------------------------------------------------------------
+
+case "$(uname -s)" in
+    MINGW*|MSYS*|CYGWIN*)
+        jq() { command jq "$@" | tr -d '\r'; }
+        ;;
+esac
+
+
+# ------------------------------------------------------------
+# Configuration
+# ------------------------------------------------------------
+
+LIMIT="${GH_DASHBOARD_LIMIT:-200}"
+BATCH="${GH_DASHBOARD_BATCH:-20}"
+
+for SETTING in "GH_DASHBOARD_LIMIT=$LIMIT" "GH_DASHBOARD_BATCH=$BATCH"; do
+    if ! [[ "${SETTING#*=}" =~ ^[1-9][0-9]*$ ]]; then
+        echo "Invalid ${SETTING%%=*}: '${SETTING#*=}' (must be a positive number)" >&2
+        exit 1
+    fi
+done
+
+FILTER="all"
+
+if [[ $# -gt 1 ]]; then
+    echo "Too many arguments: $*" >&2
+    echo "Use --help for usage." >&2
+    exit 1
+fi
+
+case "${1:-}" in
+    --mine)
+        FILTER="mine"
+        ;;
+    --review)
+        FILTER="review"
+        ;;
+    --all)
+        FILTER="all"
+        ;;
+    --help|-h)
+        cat <<EOF
+
+GitHub PR Dashboard
+
+Usage:
+  gh dashboard              All open PRs
+  gh dashboard --mine       PRs authored by you
+  gh dashboard --review     PRs requesting your review
+  gh dashboard --all        Same as default
+  gh dashboard --version    Print version
+
+Run it inside a clone of a GitHub repository.
+
+Environment:
+  GH_DASHBOARD_LIMIT=200    Max PRs to show
+  GH_DASHBOARD_BATCH=20     PRs per API request (lower if you get 504s)
+  NO_COLOR=1                Disable colors and clickable links
+  CLICOLOR_FORCE=1          Keep colors when output is piped
+
+Docs: https://github.com/BenSagir/gh-dashboard
+
+EOF
+        exit 0
+        ;;
+    --version|-v)
+        echo "gh-dashboard $VERSION"
+        exit 0
+        ;;
+    "")
+        ;;
+    *)
+        echo "Unknown option: $1" >&2
+        echo "Use --help for usage." >&2
+        exit 1
+        ;;
+esac
+
+
+# ------------------------------------------------------------
+# Colors
+#
+# On when stdout is a terminal. NO_COLOR (https://no-color.org)
+# turns them off; CLICOLOR_FORCE turns them on even when piped.
+# Clickable links follow the same rule.
+# ------------------------------------------------------------
+
+USE_COLOR=0
+
+if [[ -n "${NO_COLOR:-}" ]]; then
+    USE_COLOR=0
+elif [[ -n "${CLICOLOR_FORCE:-}" && "${CLICOLOR_FORCE}" != "0" ]]; then
+    USE_COLOR=1
+elif [[ -t 1 ]]; then
+    USE_COLOR=1
+fi
+
+if [[ "$USE_COLOR" == 1 ]]; then
+
+    RESET=$'\033[0m'
+    BOLD=$'\033[1m'
+    DIM=$'\033[2m'
+
+    RED=$'\033[31m'
+    GREEN=$'\033[32m'
+    YELLOW=$'\033[33m'
+    ORANGE=$'\033[38;5;208m'
+    CYAN=$'\033[36m'
+
+else
+
+    RESET=""
+    BOLD=""
+    DIM=""
+
+    RED=""
+    GREEN=""
+    YELLOW=""
+    ORANGE=""
+    CYAN=""
+
+fi
+
+
+# ------------------------------------------------------------
+# Terminal hyperlink
+#
+# OSC 8 works in iTerm2, Windows Terminal and most modern terminals.
+# ------------------------------------------------------------
+
+link()
+{
+    local url="$1"
+    local text="$2"
+
+    if [[ "$USE_COLOR" == 1 ]]; then
+        printf '\033]8;;%s\a%s\033]8;;\a' "$url" "$text"
+    else
+        printf '%s' "$text"
+    fi
+}
+
+
+# ------------------------------------------------------------
+# Table row
+#
+# Bash 3.2 printf pads by bytes, so colors, links and symbols
+# like ✓ throw columns off. This pads/truncates each cell by
+# its visible width instead (escape codes = 0, emoji = 2).
+#
+# Usage: row CELL...   (widths come from COL_WIDTHS)
+# ------------------------------------------------------------
+
+COL_WIDTHS="6,34,14,30,10,11,12"
+
+row()
+{
+    perl -CSA -e '
+        my @widths = split /,/, shift @ARGV;
+        my $esc = qr/\e\[[0-9;]*m|\e\]8;;[^\a]*\a/;
+
+        sub cw {
+            my $c = shift;
+            return 0 if $c =~ /^\p{M}/;
+            return 2 if $c =~ /[\x{1100}-\x{115F}\x{2E80}-\x{A4CF}\x{AC00}-\x{D7A3}\x{F900}-\x{FAFF}\x{FF00}-\x{FF60}\x{1F300}-\x{1FAFF}]/;
+            return 1;
+        }
+
+        my @cells;
+        for my $i (0 .. $#widths) {
+            my $s   = $ARGV[$i] // "";
+            my $max = $widths[$i];
+
+            (my $plain = $s) =~ s/$esc//g;
+            my $total = 0;
+            $total += cw($_) for $plain =~ /\X/g;
+            my $limit = $total > $max ? $max - 1 : $max;
+
+            my ($out, $vis, $cut) = ("", 0, 0);
+            while ($s =~ /\G($esc|\X)/gc) {
+                my $t = $1;
+                if ($t =~ /^\e/) { $out .= $t; next }
+                next if $cut;
+                my $w = cw($t);
+                if ($vis + $w > $limit) { $out .= "\x{2026}"; $vis++; $cut = 1; next }
+                $out .= $t;
+                $vis += $w;
+            }
+
+            $out .= " " x ($max - $vis) if $vis < $max;
+            push @cells, $out;
+        }
+
+        print join(" ", @cells), "\n";
+    ' "$COL_WIDTHS" "$@"
+}
+
+
+# ------------------------------------------------------------
+# Current repository
+# ------------------------------------------------------------
+
+if ! git rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+
+    echo
+    echo "${RED}Not inside a git repository.${RESET}"
+    echo
+    echo "Run this command from a cloned GitHub repository."
+    echo
+
+    exit 1
+
+fi
+
+REPO_ERROR=""
+
+if ! REPO=$(gh repo view --json nameWithOwner --jq '.nameWithOwner' 2>&1); then
+    REPO_ERROR="$REPO"
+    REPO=""
+fi
+
+
+# ------------------------------------------------------------
+# The active gh account may not have access to this repo
+# (e.g. work account active, personal private repo).
+# Try the other logged-in accounts; the first one that can
+# see the repo is used for the rest of this run only, via
+# GH_TOKEN, so the global `gh auth` setting is not changed.
+# ------------------------------------------------------------
+
+if [[ -z "$REPO" ]]; then
+
+    ACCOUNTS=$(gh auth status --json hosts \
+        --jq '.hosts["github.com"][]? | select(.active | not) | .login' \
+        2>/dev/null || true)
+
+    for ACCOUNT in $ACCOUNTS; do
+
+        ACCOUNT_TOKEN=$(gh auth token --user "$ACCOUNT" 2>/dev/null || true)
+        [[ -z "$ACCOUNT_TOKEN" ]] && continue
+
+        REPO=$(GH_TOKEN="$ACCOUNT_TOKEN" gh repo view \
+            --json nameWithOwner \
+            --jq '.nameWithOwner' 2>/dev/null || true)
+
+        if [[ -n "$REPO" ]]; then
+            export GH_TOKEN="$ACCOUNT_TOKEN"
+            break
+        fi
+
+    done
+
+fi
+
+if [[ -z "$REPO" ]]; then
+
+    echo
+    echo "${RED}Could not open this repository on GitHub.${RESET}"
+    echo
+    echo "gh said: ${REPO_ERROR:-unknown error}"
+    echo
+    echo "None of your logged-in gh accounts can see it."
+    echo "Check access with: gh auth status"
+    echo
+
+    exit 1
+
+fi
+
+
+# ------------------------------------------------------------
+# User
+# ------------------------------------------------------------
+
+GH_USER=$(gh api user --jq '.login')
+
+
+# ------------------------------------------------------------
+# Build PR search
+# ------------------------------------------------------------
+
+SEARCH_QUERY="repo:$REPO is:pr is:open sort:created-desc"
+
+case "$FILTER" in
+
+    mine)
+        SEARCH_QUERY="$SEARCH_QUERY author:$GH_USER"
+        ;;
+
+    review)
+        SEARCH_QUERY="$SEARCH_QUERY review-requested:$GH_USER"
+        ;;
+
+esac
+
+
+# ------------------------------------------------------------
+# Fetch PR data in batches
+#
+# `gh pr list` asks for up to 100 PRs in one GraphQL request
+# and can't be told to use smaller pages. Merge status + every
+# check run for 50 PRs takes ~16s, and GitHub cuts GraphQL off
+# at ~10s -> 504. So we page through ourselves, BATCH PRs per
+# request, and halve the batch if a request still fails.
+#
+# CI uses the commit's overall statusCheckRollup state (the
+# same pass/fail/pending GitHub shows) instead of fetching
+# every individual check run, which is the other heavy part.
+# ------------------------------------------------------------
+
+# $q, $first, $after are GraphQL variables, not shell ones.
+# shellcheck disable=SC2016
+PR_QUERY='
+query($q: String!, $first: Int!, $after: String) {
+  search(query: $q, type: ISSUE, first: $first, after: $after) {
+    pageInfo { hasNextPage endCursor }
+    nodes {
+      ... on PullRequest {
+        number title url isDraft reviewDecision mergeable mergeStateStatus
+        author { login }
+        reviewRequests(first: 20) {
+          nodes {
+            requestedReviewer {
+              ... on User { login }
+              ... on Team { name }
+              ... on Bot { login }
+              ... on Mannequin { login }
+            }
+          }
+        }
+        latestReviews(first: 20) { nodes { author { login } state } }
+        commits(last: 1) { nodes { commit { statusCheckRollup { state } } } }
+      }
+    }
+  }
+}'
+
+# Reshape a search page into the same JSON shape `gh pr list`
+# produced, so the rendering code below is unchanged.
+PAGE_TO_PRS='
+[
+    .data.search.nodes[]
+    | select(.number)
+    | {
+        number, title, url, isDraft, reviewDecision,
+        mergeable, mergeStateStatus, author,
+        reviewRequests: [
+            .reviewRequests.nodes[].requestedReviewer
+            | select(. != null)
+            | {login: (.login // .name)}
+        ],
+        latestReviews: .latestReviews.nodes,
+        statusCheckRollup: [
+            .commits.nodes[0].commit.statusCheckRollup // empty
+            | {state}
+        ]
+    }
+]'
+
+PAGE_SIZE="$BATCH"
+FETCHED=0
+CURSOR=""
+PAGES=""
+
+while (( FETCHED < LIMIT )); do
+
+    FIRST=$(( LIMIT - FETCHED < PAGE_SIZE ? LIMIT - FETCHED : PAGE_SIZE ))
+
+    [[ -t 2 ]] && printf '\r Fetching PRs… %d' "$FETCHED" >&2
+
+    ATTEMPT=1
+
+    until PAGE=$(gh api graphql \
+            -f query="$PR_QUERY" \
+            -f q="$SEARCH_QUERY" \
+            -F first="$FIRST" \
+            ${CURSOR:+-f after="$CURSOR"} 2>&1); do
+
+        if [[ "$ATTEMPT" -ge 4 ]]; then
+            [[ -t 2 ]] && printf '\r\033[K' >&2
+            echo
+            echo "${RED}Fetching PRs failed after $ATTEMPT attempts.${RESET}"
+            echo
+            echo "$PAGE" | tail -3
+            echo
+            exit 1
+        fi
+
+        ATTEMPT=$(( ATTEMPT + 1 ))
+        PAGE_SIZE=$(( PAGE_SIZE > 1 ? PAGE_SIZE / 2 : 1 ))
+        FIRST=$(( FIRST < PAGE_SIZE ? FIRST : PAGE_SIZE ))
+
+    done
+
+    # A shrunk batch worked: grow back toward BATCH.
+    PAGE_SIZE=$(( PAGE_SIZE * 2 < BATCH ? PAGE_SIZE * 2 : BATCH ))
+
+    PAGE_PRS=$(echo "$PAGE" | jq -c "$PAGE_TO_PRS")
+    PAGES="${PAGES}${PAGE_PRS}"$'\n'
+    FETCHED=$(( FETCHED + $(echo "$PAGE_PRS" | jq 'length') ))
+
+    CURSOR=$(echo "$PAGE" | jq -r '
+        .data.search.pageInfo
+        | if .hasNextPage then .endCursor else empty end
+    ')
+
+    [[ -z "$CURSOR" ]] && break
+
+done
+
+[[ -t 2 ]] && printf '\r\033[K' >&2
+
+PRS=$(printf '%s' "$PAGES" | jq -s 'add // []')
+
+
+PR_COUNT=$(echo "$PRS" | jq 'length')
+
+
+# ------------------------------------------------------------
+# Header
+# ------------------------------------------------------------
+
+echo
+
+printf " %sGitHub PR Dashboard%s — %s%s%s\n" "$BOLD$CYAN" "$RESET" "$BOLD" "$REPO" "$RESET"
+
+printf " %sUpdated: %s   PRs: %s%s\n" \
+    "$DIM" \
+    "$(date '+%H:%M:%S')" \
+    "$PR_COUNT" \
+    "$RESET"
+
+echo
+
+
+# ------------------------------------------------------------
+# Column widths
+# ------------------------------------------------------------
+
+row \
+    "${BOLD}#" \
+    "PR" \
+    "AUTHOR" \
+    "REVIEWERS" \
+    "CI" \
+    "APPROVALS" \
+    "MERGE${RESET}"
+
+# Separator spans all columns + the single spaces between them.
+# (Built with printf, not tr: tr is byte-based and mangles ─.)
+TABLE_WIDTH=$(( $(echo "$COL_WIDTHS" | tr ',' '+') + $(echo "$COL_WIDTHS" | tr -cd ',' | wc -c) ))
+printf '─%.0s' $(seq 1 "$TABLE_WIDTH")
+echo
+
+
+# ------------------------------------------------------------
+# Process each PR
+# ------------------------------------------------------------
+
+echo "$PRS" | jq -c '.[]' | while read -r PR; do
+
+    NUMBER=$(echo "$PR" | jq -r '.number')
+
+    TITLE=$(echo "$PR" | jq -r '.title')
+
+    AUTHOR=$(echo "$PR" | jq -r '.author.login // "—"')
+
+    URL=$(echo "$PR" | jq -r '.url')
+
+    IS_DRAFT=$(echo "$PR" | jq -r '.isDraft')
+
+    MERGEABLE=$(echo "$PR" | jq -r '.mergeable')
+
+    MERGE_STATE=$(echo "$PR" | jq -r '.mergeStateStatus // "UNKNOWN"')
+
+    REVIEW_DECISION=$(echo "$PR" | jq -r '.reviewDecision // "UNKNOWN"')
+
+
+    # --------------------------------------------------------
+    # Draft
+    # --------------------------------------------------------
+
+    if [[ "$IS_DRAFT" == "true" ]]; then
+        TITLE="${TITLE} [DRAFT]"
+    fi
+
+
+    # --------------------------------------------------------
+    # Reviewers
+    #
+    # We combine:
+    #   reviewRequests
+    #   latestReviews
+    #
+    # This means we can show both pending reviewers and
+    # reviewers who already submitted a review.
+    # --------------------------------------------------------
+
+    REVIEWERS=$(
+        echo "$PR" | jq -r '
+
+        (
+            [
+                .reviewRequests[]?.login,
+                .latestReviews[]?.author.login
+            ]
+            | unique
+        ) as $users |
+
+        . as $pr |
+
+        [
+            $users[] |
+            . as $login |
+
+            (
+                [
+                    $pr.latestReviews[]?
+                    | select(.author.login == $login)
+                    | .state
+                ][0] // "PENDING"
+            ) as $state |
+
+            if $state == "APPROVED"
+            then "APPROVED:\($login)"
+
+            elif $state == "CHANGES_REQUESTED"
+            then "CHANGES:\($login)"
+
+            elif $state == "COMMENTED"
+            then "COMMENTED:\($login)"
+
+            else
+                "PENDING:\($login)"
+            end
+        ]
+        | join("|")
+        '
+    )
+
+
+    # --------------------------------------------------------
+    # Render reviewer statuses
+    # --------------------------------------------------------
+
+    REVIEWER_DISPLAY=""
+
+    IFS='|' read -ra REVIEWER_ARRAY <<< "$REVIEWERS"
+
+    for REVIEWER in ${REVIEWER_ARRAY[@]+"${REVIEWER_ARRAY[@]}"}; do
+
+        [[ -z "$REVIEWER" ]] && continue
+
+        STATE="${REVIEWER%%:*}"
+        USER="${REVIEWER#*:}"
+
+        case "$STATE" in
+
+            APPROVED)
+                ITEM="${GREEN}✓ ${USER}${RESET}"
+                ;;
+
+            CHANGES)
+                ITEM="${RED}✗ ${USER}${RESET}"
+                ;;
+
+            COMMENTED)
+                ITEM="${ORANGE}💬 ${USER}${RESET}"
+                ;;
+
+            PENDING)
+                ITEM="${YELLOW}◷ ${USER}${RESET}"
+                ;;
+
+            *)
+                ITEM="${DIM}? ${USER}${RESET}"
+                ;;
+
+        esac
+
+        if [[ -z "$REVIEWER_DISPLAY" ]]; then
+            REVIEWER_DISPLAY="$ITEM"
+        else
+            REVIEWER_DISPLAY="$REVIEWER_DISPLAY $ITEM"
+        fi
+
+    done
+
+
+    if [[ -z "$REVIEWER_DISPLAY" ]]; then
+        REVIEWER_DISPLAY="${DIM}—${RESET}"
+    fi
+
+
+    # --------------------------------------------------------
+    # Approval count
+    # --------------------------------------------------------
+
+    APPROVED_COUNT=$(
+        echo "$PR" |
+        jq '[.latestReviews[]? | select(.state == "APPROVED")] | length'
+    )
+
+    # --------------------------------------------------------
+    # Total reviewers = pending requests + anyone who already
+    # reviewed (GitHub drops a reviewer from reviewRequests
+    # once they submit a review). Same set as REVIEWERS.
+    # --------------------------------------------------------
+
+    REVIEWER_COUNT=$(
+        echo "$PR" |
+        jq '[.reviewRequests[]?.login, .latestReviews[]?.author.login] | unique | length'
+    )
+
+    APPROVAL_DISPLAY="${APPROVED_COUNT}/${REVIEWER_COUNT}"
+
+
+    if [[ "$REVIEW_DECISION" == "APPROVED" ]]; then
+        APPROVAL_DISPLAY="${GREEN}${APPROVAL_DISPLAY}${RESET}"
+
+    elif [[ "$REVIEW_DECISION" == "CHANGES_REQUESTED" ]]; then
+        APPROVAL_DISPLAY="${RED}${APPROVAL_DISPLAY}${RESET}"
+
+    else
+        APPROVAL_DISPLAY="${YELLOW}${APPROVAL_DISPLAY}${RESET}"
+    fi
+
+
+    # --------------------------------------------------------
+    # CI
+    #
+    # statusCheckRollup holds the commit's overall rollup state
+    # (see PAGE_TO_PRS). The conclusion/status branches also
+    # accept per-check entries, the shape `gh pr list` returns.
+    # --------------------------------------------------------
+
+    CI_RESULT=$(
+        echo "$PR" | jq -r '
+
+        [
+            .statusCheckRollup[]? |
+
+            (
+                (.conclusion // "") |
+                ascii_upcase
+            ) as $conclusion |
+
+            (
+                (.status // .state // "") |
+                ascii_upcase
+            ) as $state |
+
+            if $conclusion == "FAILURE"
+                or $conclusion == "TIMED_OUT"
+                or $conclusion == "CANCELLED"
+                or $conclusion == "ACTION_REQUIRED"
+            then "FAIL"
+
+            elif $state == "FAILURE"
+                or $state == "ERROR"
+            then "FAIL"
+
+            elif $state == "IN_PROGRESS"
+                or $state == "QUEUED"
+                or $state == "PENDING"
+                or $state == "EXPECTED"
+                or $state == "WAITING"
+            then "PENDING"
+
+            elif $conclusion == "SUCCESS"
+                or $conclusion == "NEUTRAL"
+                or $conclusion == "SKIPPED"
+                or $state == "SUCCESS"
+            then "PASS"
+
+            else
+                "UNKNOWN"
+            end
+        ]
+        | if any(.[]; . == "FAIL")
+            then "FAIL"
+          elif any(.[]; . == "PENDING")
+            then "PENDING"
+          elif length == 0
+            then "NONE"
+          elif all(.[]; . == "PASS")
+            then "PASS"
+          else
+            "UNKNOWN"
+          end
+        '
+    )
+
+
+    case "$CI_RESULT" in
+
+        PASS)
+            CI_DISPLAY="${GREEN}✓ PASS${RESET}"
+            ;;
+
+        FAIL)
+            CI_DISPLAY="${RED}✗ FAIL${RESET}"
+            ;;
+
+        PENDING)
+            CI_DISPLAY="${YELLOW}◷ RUN${RESET}"
+            ;;
+
+        NONE)
+            CI_DISPLAY="${DIM}— NONE${RESET}"
+            ;;
+
+        *)
+            CI_DISPLAY="${DIM}? UNKNOWN${RESET}"
+            ;;
+
+    esac
+
+
+    # --------------------------------------------------------
+    # MERGE STATUS
+    #
+    # This is intentionally synthesized rather than simply
+    # printing mergeStateStatus.
+    #
+    # Priority:
+    #
+    # DRAFT
+    # CONFLICT
+    # CI FAIL
+    # CHANGES REQUESTED
+    # REVIEW REQUIRED
+    # CI PENDING
+    # BLOCKED
+    # READY
+    # --------------------------------------------------------
+
+    if [[ "$IS_DRAFT" == "true" ]]; then
+
+        MERGE_STATUS="DRAFT"
+        MERGE_COLOR="$YELLOW"
+        MERGE_ICON="◷"
+
+    elif [[ "$MERGEABLE" == "CONFLICTING" ]]; then
+
+        MERGE_STATUS="CONFLICT"
+        MERGE_COLOR="$RED"
+        MERGE_ICON="✗"
+
+    elif [[ "$CI_RESULT" == "FAIL" ]]; then
+
+        MERGE_STATUS="CI FAIL"
+        MERGE_COLOR="$RED"
+        MERGE_ICON="✗"
+
+    elif [[ "$REVIEW_DECISION" == "CHANGES_REQUESTED" ]]; then
+
+        MERGE_STATUS="CHANGES"
+        MERGE_COLOR="$RED"
+        MERGE_ICON="✗"
+
+    elif [[ "$REVIEW_DECISION" == "REVIEW_REQUIRED" ]]; then
+
+        MERGE_STATUS="REVIEW"
+        MERGE_COLOR="$YELLOW"
+        MERGE_ICON="◷"
+
+    elif [[ "$CI_RESULT" == "PENDING" ]]; then
+
+        MERGE_STATUS="CI RUN"
+        MERGE_COLOR="$YELLOW"
+        MERGE_ICON="◷"
+
+    elif [[ "$MERGE_STATE" == "BLOCKED" ]]; then
+
+        MERGE_STATUS="BLOCKED"
+        MERGE_COLOR="$RED"
+        MERGE_ICON="✗"
+
+    elif [[ "$MERGEABLE" == "MERGEABLE" ]]; then
+
+        MERGE_STATUS="READY"
+        MERGE_COLOR="$GREEN"
+        MERGE_ICON="✓"
+
+    else
+
+        MERGE_STATUS="$MERGE_STATE"
+        MERGE_COLOR="$DIM"
+        MERGE_ICON="?"
+
+    fi
+
+
+    MERGE_DISPLAY="${MERGE_COLOR}${MERGE_ICON} ${MERGE_STATUS}${RESET}"
+
+
+    # --------------------------------------------------------
+    # Clickable PR link
+    # --------------------------------------------------------
+
+    row \
+        "#${NUMBER}" \
+        "$(link "$URL" "$TITLE")" \
+        "$AUTHOR" \
+        "$REVIEWER_DISPLAY" \
+        "$CI_DISPLAY" \
+        "$APPROVAL_DISPLAY" \
+        "$MERGE_DISPLAY"
+
+done
+
+
+# ------------------------------------------------------------
+# Legend
+# ------------------------------------------------------------
+
+echo
+
+printf ' %s ' "${DIM}Legend:${RESET}"
+printf '%s  ' "${GREEN}✓ Approved${RESET}"
+printf '%s  ' "${YELLOW}◷ Pending${RESET}"
+printf '%s  ' "${RED}✗ Changes/Problem${RESET}"
+printf '%s' "${ORANGE}💬 Comment${RESET}"
+
+echo
+
+if [[ "$USE_COLOR" == 1 ]]; then
+    echo
+    printf ' %s\n' "${DIM}Click a PR title to open it in your browser.${RESET}"
+fi
+
+echo
+

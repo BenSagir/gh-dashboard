@@ -1,0 +1,4 @@
+# Keep LF endings: Git for Windows would otherwise check the
+# script out with CRLF and bash fails with $'\r': command not found.
+* text=auto eol=lf
+gh-dashboard text eol=lf
