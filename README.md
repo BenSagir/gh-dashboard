@@ -2,6 +2,8 @@
 
 [![tests](https://github.com/BenSagir/gh-dashboard/actions/workflows/tests.yml/badge.svg)](https://github.com/BenSagir/gh-dashboard/actions/workflows/tests.yml)
 
+English | [עברית](README.he.md)
+
 A [GitHub CLI](https://cli.github.com) extension that shows a repository's
 open pull requests in one table, with more at a glance than GitHub's web PR
 list: **every reviewer's status, CI, approval count and whether it can be
@@ -121,6 +123,7 @@ What every column and symbol means: **[docs/usage.md](docs/usage.md)**.
 
 ## Documentation
 
+- [מדריך בעברית (Hebrew guide)](README.he.md): what it is, install, usage, columns, common problems
 - [Installation](docs/installation.md): macOS, Windows, Linux, WSL, upgrading, uninstalling
 - [Usage](docs/usage.md): options, columns, statuses, settings, examples
 - [Troubleshooting](docs/troubleshooting.md): common errors and fixes
