@@ -26,6 +26,30 @@ merged**.
 
 In a terminal, statuses are colored and every PR title is a clickable link.
 
+## Quick start
+
+**1. Install** (macOS shown, for Windows and Linux see [Install](#install)):
+
+```bash
+brew install gh jq
+gh auth login
+gh extension install BenSagir/gh-dashboard
+```
+
+**2. Run** inside a clone of your repository:
+
+```bash
+gh dashboard            # all open PRs
+gh dashboard --mine     # PRs you opened
+gh dashboard --review   # PRs waiting for your review
+```
+
+**3. Update** when a new version is out:
+
+```bash
+gh extension upgrade dashboard
+```
+
 ## Features
 
 - **Per-reviewer status**: who approved, who requested changes, who only

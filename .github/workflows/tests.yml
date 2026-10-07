@@ -23,6 +23,8 @@ jobs:
   test:
     name: test (${{ matrix.os }})
     runs-on: ${{ matrix.os }}
+    # Windows is slow to start processes; Linux finishes in about a minute.
+    timeout-minutes: 30
     strategy:
       fail-fast: false
       matrix:
