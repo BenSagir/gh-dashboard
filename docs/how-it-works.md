@@ -28,11 +28,26 @@ Exporting `GH_TOKEN` affects only the dashboard's own process. It never runs
 
 ## Fetching PRs
 
-PRs come from one GraphQL **search** query:
+PRs come from a GraphQL **search** query:
 
 ```
-repo:<owner/name> is:pr is:open sort:created-desc [author:<you> | review-requested:<you>]
+repo:<owner/name> is:pr is:open sort:created-desc
 ```
+
+plus, depending on the option:
+
+| Option | Added to the query |
+|---|---|
+| `--all` | nothing |
+| `--mine` | `author:<you>` |
+| `--review` | two searches: `review-requested:<you> -author:<you>` **and** `reviewed-by:<you> -author:<you>` |
+
+`--review` needs two searches because GitHub search has no OR between these
+qualifiers, and `review-requested:` stops matching as soon as you submit a
+review. `reviewed-by:` covers approvals, change requests, comments and
+dismissed reviews. The results are merged, duplicates removed, sorted newest
+first and cut to `GH_DASHBOARD_LIMIT`. `-author:` leaves out your own PRs,
+where replying to review comments also counts as a review by you.
 
 For each PR it requests the title, author, draft flag, review decision,
 mergeability, up to 20 review requests, up to 20 latest reviews (one per

@@ -30,13 +30,28 @@ a `Fetching PRs… N` counter shows progress.
 |---|---|
 | *(none)* or `--all` | All open PRs |
 | `--mine` | Open PRs you authored |
-| `--review` | Open PRs where your review is requested |
+| `--review` | Open PRs you're a reviewer on, see below |
 | `--version`, `-v` | The installed version |
 | `--help`, `-h` | Help |
 
 Pass at most one option. "You" means the GitHub account the dashboard uses
 for the repository, normally your active `gh` account (see
 [several accounts](installation.md#several-github-accounts)).
+
+### Which PRs `--review` shows
+
+Every open PR, except your own, where you are a reviewer:
+
+- your review is requested and you haven't reviewed yet, directly or
+  through a team you're on
+- you approved it
+- you requested changes
+- you left review comments
+- your review was dismissed
+
+GitHub stops listing you as "requested" once you submit a review, so the
+dashboard combines two searches (`review-requested:` and `reviewed-by:`)
+to keep PRs you've already reviewed in the list.
 
 ## Reading the table
 
@@ -67,7 +82,7 @@ with their latest state:
 | `✓ name` | green | Approved |
 | `✗ name` | red | Requested changes |
 | `💬 name` | orange | Commented without approving or requesting changes |
-| `◷ name` | yellow | Review requested, not submitted yet |
+| `◷ name` | yellow | Review requested and not submitted yet, or their review was dismissed (it no longer counts, so it's needed again) |
 | `—` | dim | No reviewers |
 
 Team review requests show the team name, for example `◷ frontend-team`.

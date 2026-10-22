@@ -6,6 +6,17 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+## [1.1.0] - 2026-10-22
+
+### Fixed
+
+- `--review` was empty for PRs you had already reviewed. GitHub stops
+  listing you as a requested reviewer once you submit a review, so the old
+  `review-requested:` search missed them. `--review` now shows every open
+  PR you're a reviewer on: requested, approved, changes requested,
+  commented or dismissed. Your own PRs are left out. A dismissed review
+  shows as `◷` (pending), since it no longer counts.
+
 ## [1.0.0] - 2026-10-07
 
 First public release.
@@ -26,5 +37,6 @@ First public release.
   output is piped.
 - Offline test suite and CI on Linux, macOS (bash 3.2) and Windows.
 
-[Unreleased]: https://github.com/BenSagir/gh-dashboard/compare/v1.0.0...HEAD
+[Unreleased]: https://github.com/BenSagir/gh-dashboard/compare/v1.1.0...HEAD
+[1.1.0]: https://github.com/BenSagir/gh-dashboard/compare/v1.0.0...v1.1.0
 [1.0.0]: https://github.com/BenSagir/gh-dashboard/releases/tag/v1.0.0

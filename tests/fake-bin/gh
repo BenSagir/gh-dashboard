@@ -8,6 +8,8 @@
 #   FAKE_REPO         nameWithOwner returned by `gh repo view`
 #   FAKE_REPO_TOKEN   only this token can see the repo (default: any)
 #   FAKE_PRS          JSON file: array of PullRequest search nodes
+#   FAKE_PRS_REQUESTED  used instead when the query has review-requested:
+#   FAKE_PRS_REVIEWED   used instead when the query has reviewed-by:
 #   FAKE_FAIL_FIRST   fail the first N graphql calls with HTTP 504
 #   FAKE_STATE_DIR    scratch dir for call counters
 #   FAKE_LOG          every call is appended here, one per line
@@ -127,6 +129,11 @@ case "${1:-} ${2:-}" in
             exit 1
         fi
 
+        q=$(field q "$@")
+        prs="${FAKE_PRS:?FAKE_PRS must be set}"
+        [[ "$q" == *review-requested:* && -n "${FAKE_PRS_REQUESTED:-}" ]] && prs="$FAKE_PRS_REQUESTED"
+        [[ "$q" == *reviewed-by:* && -n "${FAKE_PRS_REVIEWED:-}" ]] && prs="$FAKE_PRS_REVIEWED"
+
         # Cursors are plain offsets into the fixture array.
         jqlf -c --argjson first "$first" --argjson offset "${after:-0}" '
             (length) as $total
@@ -137,7 +144,7 @@ case "${1:-} ${2:-}" in
                 },
                 nodes: .[$offset : $offset + $first]
               }}}
-        ' "${FAKE_PRS:?FAKE_PRS must be set}"
+        ' "$prs"
         ;;
 
     *)

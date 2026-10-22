@@ -53,6 +53,17 @@ test_no_ci_and_blocked() {
     assert_row 108 "— NONE" "✗ BLOCKED"
 }
 
+test_dismissed_review_shows_as_pending() {
+    # A dismissed review needs a new review, so it shows as pending.
+    jq '[.[] | select(.number == 101)
+         | .latestReviews.nodes = [{author: {login: "erin"}, state: "DISMISSED"}]]' \
+        "$FIXTURES/states.json" | tr -d '\r' > "$TEST_TMP/dismissed.json"
+    export FAKE_PRS="$TEST_TMP/dismissed.json"
+    dashboard
+    assert_status 0
+    assert_row 101 "◷ erin" "0/1"
+}
+
 test_team_review_request_shows_team_name() {
     dashboard
     assert_row 109 "◷ frontend-team" "0/1"

@@ -24,7 +24,7 @@ set -euo pipefail
 # Docs: https://github.com/BenSagir/gh-dashboard
 # ============================================================
 
-VERSION="1.0.0"
+VERSION="1.1.0"
 
 
 # ------------------------------------------------------------
@@ -82,7 +82,7 @@ GitHub PR Dashboard
 Usage:
   gh dashboard              All open PRs
   gh dashboard --mine       PRs authored by you
-  gh dashboard --review     PRs requesting your review
+  gh dashboard --review     PRs you are a reviewer on (requested or reviewed)
   gh dashboard --all        Same as default
   gh dashboard --version    Print version
 
@@ -315,16 +315,31 @@ GH_USER=$(gh api user --jq '.login')
 # Build PR search
 # ------------------------------------------------------------
 
-SEARCH_QUERY="repo:$REPO is:pr is:open sort:created-desc"
+SEARCH_BASE="repo:$REPO is:pr is:open sort:created-desc"
 
 case "$FILTER" in
 
+    all)
+        SEARCH_QUERIES=("$SEARCH_BASE")
+        ;;
+
     mine)
-        SEARCH_QUERY="$SEARCH_QUERY author:$GH_USER"
+        SEARCH_QUERIES=("$SEARCH_BASE author:$GH_USER")
         ;;
 
     review)
-        SEARCH_QUERY="$SEARCH_QUERY review-requested:$GH_USER"
+        # Every open PR you're a reviewer on. GitHub search has no
+        # OR between these, so run both and merge:
+        #   review-requested: asked to review, not reviewed yet
+        #                     (GitHub drops the request once you do)
+        #   reviewed-by:      any review you submitted, including
+        #                     comments and reviews later dismissed
+        # -author: skips your own PRs, where replying to review
+        # comments also counts as "reviewed-by" you.
+        SEARCH_QUERIES=(
+            "$SEARCH_BASE review-requested:$GH_USER -author:$GH_USER"
+            "$SEARCH_BASE reviewed-by:$GH_USER -author:$GH_USER"
+        )
         ;;
 
 esac
@@ -394,59 +409,75 @@ PAGE_TO_PRS='
 ]'
 
 PAGE_SIZE="$BATCH"
-FETCHED=0
-CURSOR=""
 PAGES=""
+TOTAL_FETCHED=0
 
-while (( FETCHED < LIMIT )); do
+for SEARCH_QUERY in "${SEARCH_QUERIES[@]}"; do
 
-    FIRST=$(( LIMIT - FETCHED < PAGE_SIZE ? LIMIT - FETCHED : PAGE_SIZE ))
+    FETCHED=0
+    CURSOR=""
 
-    [[ -t 2 ]] && printf '\r Fetching PRs… %d' "$FETCHED" >&2
+    while (( FETCHED < LIMIT )); do
 
-    ATTEMPT=1
+        FIRST=$(( LIMIT - FETCHED < PAGE_SIZE ? LIMIT - FETCHED : PAGE_SIZE ))
 
-    until PAGE=$(gh api graphql \
-            -f query="$PR_QUERY" \
-            -f q="$SEARCH_QUERY" \
-            -F first="$FIRST" \
-            ${CURSOR:+-f after="$CURSOR"} 2>&1); do
+        [[ -t 2 ]] && printf '\r Fetching PRs… %d' "$TOTAL_FETCHED" >&2
 
-        if [[ "$ATTEMPT" -ge 4 ]]; then
-            [[ -t 2 ]] && printf '\r\033[K' >&2
-            echo
-            echo "${RED}Fetching PRs failed after $ATTEMPT attempts.${RESET}"
-            echo
-            echo "$PAGE" | tail -3
-            echo
-            exit 1
-        fi
+        ATTEMPT=1
 
-        ATTEMPT=$(( ATTEMPT + 1 ))
-        PAGE_SIZE=$(( PAGE_SIZE > 1 ? PAGE_SIZE / 2 : 1 ))
-        FIRST=$(( FIRST < PAGE_SIZE ? FIRST : PAGE_SIZE ))
+        until PAGE=$(gh api graphql \
+                -f query="$PR_QUERY" \
+                -f q="$SEARCH_QUERY" \
+                -F first="$FIRST" \
+                ${CURSOR:+-f after="$CURSOR"} 2>&1); do
+
+            if [[ "$ATTEMPT" -ge 4 ]]; then
+                [[ -t 2 ]] && printf '\r\033[K' >&2
+                echo
+                echo "${RED}Fetching PRs failed after $ATTEMPT attempts.${RESET}"
+                echo
+                echo "$PAGE" | tail -3
+                echo
+                exit 1
+            fi
+
+            ATTEMPT=$(( ATTEMPT + 1 ))
+            PAGE_SIZE=$(( PAGE_SIZE > 1 ? PAGE_SIZE / 2 : 1 ))
+            FIRST=$(( FIRST < PAGE_SIZE ? FIRST : PAGE_SIZE ))
+
+        done
+
+        # A shrunk batch worked: grow back toward BATCH.
+        PAGE_SIZE=$(( PAGE_SIZE * 2 < BATCH ? PAGE_SIZE * 2 : BATCH ))
+
+        PAGE_PRS=$(echo "$PAGE" | jq -c "$PAGE_TO_PRS")
+        PAGES="${PAGES}${PAGE_PRS}"$'\n'
+        PAGE_COUNT=$(echo "$PAGE_PRS" | jq 'length')
+        FETCHED=$(( FETCHED + PAGE_COUNT ))
+        TOTAL_FETCHED=$(( TOTAL_FETCHED + PAGE_COUNT ))
+
+        CURSOR=$(echo "$PAGE" | jq -r '
+            .data.search.pageInfo
+            | if .hasNextPage then .endCursor else empty end
+        ')
+
+        [[ -z "$CURSOR" ]] && break
 
     done
-
-    # A shrunk batch worked: grow back toward BATCH.
-    PAGE_SIZE=$(( PAGE_SIZE * 2 < BATCH ? PAGE_SIZE * 2 : BATCH ))
-
-    PAGE_PRS=$(echo "$PAGE" | jq -c "$PAGE_TO_PRS")
-    PAGES="${PAGES}${PAGE_PRS}"$'\n'
-    FETCHED=$(( FETCHED + $(echo "$PAGE_PRS" | jq 'length') ))
-
-    CURSOR=$(echo "$PAGE" | jq -r '
-        .data.search.pageInfo
-        | if .hasNextPage then .endCursor else empty end
-    ')
-
-    [[ -z "$CURSOR" ]] && break
 
 done
 
 [[ -t 2 ]] && printf '\r\033[K' >&2
 
-PRS=$(printf '%s' "$PAGES" | jq -s 'add // []')
+if [[ "${#SEARCH_QUERIES[@]}" -gt 1 ]]; then
+    # Several searches can return the same PR: keep one copy,
+    # newest (highest number) first, at most LIMIT.
+    PRS=$(printf '%s' "$PAGES" | jq -s --argjson limit "$LIMIT" '
+        add // [] | unique_by(.number) | sort_by(-.number) | .[:$limit]
+    ')
+else
+    PRS=$(printf '%s' "$PAGES" | jq -s 'add // []')
+fi
 
 
 PR_COUNT=$(echo "$PRS" | jq 'length')

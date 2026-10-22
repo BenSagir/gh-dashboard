@@ -43,7 +43,7 @@ gh extension install BenSagir/gh-dashboard
 ```bash
 gh dashboard            # all open PRs
 gh dashboard --mine     # PRs you opened
-gh dashboard --review   # PRs waiting for your review
+gh dashboard --review   # PRs you're a reviewer on
 ```
 
 **3. Update** when a new version is out:
@@ -101,14 +101,14 @@ Run it inside a clone of any GitHub repository:
 ```bash
 gh dashboard            # all open PRs
 gh dashboard --mine     # PRs you opened
-gh dashboard --review   # PRs waiting for your review
+gh dashboard --review   # PRs you're a reviewer on
 ```
 
 | Option | |
 |---|---|
 | `--all` | All open PRs (default) |
 | `--mine` | PRs you authored |
-| `--review` | PRs that request your review |
+| `--review` | PRs you're a reviewer on: asked to review, or already reviewed |
 | `--version`, `-v` | Print the version |
 | `--help`, `-h` | Print help |
 

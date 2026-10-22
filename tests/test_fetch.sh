@@ -23,11 +23,62 @@ test_mine_filters_by_author() {
         fail "unexpected search query: $(grep '^graphql' "$FAKE_LOG")"
 }
 
-test_review_filters_by_review_request() {
+# Write the fixture PRs with the given numbers to a file; echo its path.
+pick_prs() {
+    local file
+    file="$TEST_TMP/pick-$(echo "$*" | tr ' ' '-').json"
+    jq --arg nums " $* " '[.[] | select(.number) | select((" \(.number) ") as $n | $nums | contains($n))]' \
+        "$FIXTURES/states.json" | tr -d '\r' > "$file"
+    echo "$file"
+}
+
+test_review_searches_requested_and_reviewed() {
+    # Regression: --review only searched review-requested:, which GitHub
+    # clears as soon as you submit a review, so reviewed PRs vanished.
     dashboard --review
     assert_status 0
-    grep -q 'q=repo:acme/widgets is:pr is:open sort:created-desc review-requested:octocat$' "$FAKE_LOG" ||
-        fail "unexpected search query: $(grep '^graphql' "$FAKE_LOG")"
+    grep -q 'q=repo:acme/widgets is:pr is:open sort:created-desc review-requested:octocat -author:octocat$' "$FAKE_LOG" ||
+        fail "missing review-requested search: $(grep '^graphql' "$FAKE_LOG")"
+    grep -q 'q=repo:acme/widgets is:pr is:open sort:created-desc reviewed-by:octocat -author:octocat$' "$FAKE_LOG" ||
+        fail "missing reviewed-by search: $(grep '^graphql' "$FAKE_LOG")"
+}
+
+test_review_merges_both_searches_without_duplicates() {
+    FAKE_PRS_REQUESTED="$(pick_prs 101 102 103)"
+    FAKE_PRS_REVIEWED="$(pick_prs 103 105 108)"
+    export FAKE_PRS_REQUESTED FAKE_PRS_REVIEWED
+    dashboard --review
+    assert_status 0
+    assert_contains "PRs: 5"
+    local numbers
+    numbers="$(table_lines | grep '^#[0-9]' | awk '{print $1}' | tr '\n' ' ')"
+    assert_eq "$numbers" "#108 #105 #103 #102 #101 " "merged PRs, newest first"
+}
+
+test_review_with_only_reviewed_prs() {
+    # Nothing requested any more, but you reviewed these: they must show.
+    echo '[]' > "$TEST_TMP/none.json"
+    FAKE_PRS_REQUESTED="$TEST_TMP/none.json"
+    FAKE_PRS_REVIEWED="$(pick_prs 102 103)"
+    export FAKE_PRS_REQUESTED FAKE_PRS_REVIEWED
+    dashboard --review
+    assert_status 0
+    assert_contains "PRs: 2"
+    assert_row 103 "✗ alice 💬 bob"
+}
+
+test_review_limit_applies_after_merge() {
+    generate_prs 30
+    # Search returns newest first; the generated fixture is oldest first.
+    jq reverse "$FAKE_PRS" | tr -d '\r' > "$TEST_TMP/newest-first.json"
+    FAKE_PRS="$TEST_TMP/newest-first.json"
+    FAKE_PRS_REQUESTED="$FAKE_PRS"
+    FAKE_PRS_REVIEWED="$FAKE_PRS"
+    export FAKE_PRS_REQUESTED FAKE_PRS_REVIEWED
+    GH_DASHBOARD_LIMIT=20 dashboard --review
+    assert_status 0
+    assert_contains "PRs: 20"
+    assert_eq "$(table_lines | grep '^#[0-9]' | head -1 | awk '{print $1}')" "#1030" "newest PR first"
 }
 
 test_no_open_prs() {
