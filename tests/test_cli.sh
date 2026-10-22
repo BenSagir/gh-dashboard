@@ -7,6 +7,7 @@ test_help_lists_every_option() {
     assert_status 0
     assert_contains "gh dashboard --mine"
     assert_contains "gh dashboard --review"
+    assert_contains "gh dashboard --author NAME"
     assert_contains "gh dashboard --all"
     assert_contains "gh dashboard --version"
     assert_contains "GH_DASHBOARD_LIMIT"
@@ -33,10 +34,36 @@ test_unknown_option_fails() {
     assert_contains "--help"
 }
 
-test_too_many_arguments_fails() {
+test_two_filters_fail() {
     dashboard --mine --review
     assert_status 1
-    assert_contains "Too many arguments"
+    assert_contains "Use only one of --all, --mine, --review, --author (got --mine and --review)"
+}
+
+test_author_cannot_be_combined_with_mine() {
+    dashboard --author bob --mine
+    assert_status 1
+    assert_contains "Use only one of"
+}
+
+test_author_without_name_fails() {
+    local args
+    for args in "--author" "--author --mine" "--author=" "--author ,"; do
+        # shellcheck disable=SC2086  # split args on purpose
+        dashboard $args
+        assert_status 1
+        assert_contains "--author needs a name"
+    done
+    [[ ! -s "$FAKE_LOG" ]] || fail "should fail before calling gh"
+}
+
+test_author_rejects_names_that_could_inject_search_terms() {
+    dashboard --author "bob is:closed"
+    assert_status 1
+    assert_contains "Invalid author name: 'bob is:closed'"
+    dashboard --author "alice,bob:x"
+    assert_status 1
+    assert_contains "Invalid author name: 'bob:x'"
 }
 
 test_invalid_limit_fails() {

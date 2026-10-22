@@ -23,6 +23,47 @@ test_mine_filters_by_author() {
         fail "unexpected search query: $(grep '^graphql' "$FAKE_LOG")"
 }
 
+# The q= of the first search the last run made.
+search_query() {
+    grep '^graphql ' "$FAKE_LOG" | head -1 | sed 's/.* q=//'
+}
+
+test_author_searches_user_and_bot_forms() {
+    dashboard --author alice
+    assert_status 0
+    assert_eq "$(search_query)" \
+        "repo:acme/widgets is:pr is:open sort:created-desc author:alice author:app/alice" "search"
+    assert_contains "PRs: 14"
+}
+
+test_author_equals_form() {
+    dashboard --author=alice
+    assert_status 0
+    assert_eq "$(search_query)" \
+        "repo:acme/widgets is:pr is:open sort:created-desc author:alice author:app/alice" "search"
+}
+
+test_author_several_names() {
+    dashboard --author alice,bob
+    assert_status 0
+    assert_eq "$(search_query)" \
+        "repo:acme/widgets is:pr is:open sort:created-desc author:alice author:app/alice author:bob author:app/bob" "search"
+}
+
+test_author_strips_at_sign_and_bot_suffix() {
+    dashboard --author "@alice,dependabot[bot],,"
+    assert_status 0
+    assert_eq "$(search_query)" \
+        "repo:acme/widgets is:pr is:open sort:created-desc author:alice author:app/alice author:dependabot author:app/dependabot" "search"
+}
+
+test_author_at_me() {
+    dashboard --author @me
+    assert_status 0
+    assert_eq "$(search_query)" \
+        "repo:acme/widgets is:pr is:open sort:created-desc author:@me" "search"
+}
+
 # Write the fixture PRs with the given numbers to a file; echo its path.
 pick_prs() {
     local file

@@ -41,6 +41,7 @@ plus, depending on the option:
 | `--all` | nothing |
 | `--mine` | `author:<you>` |
 | `--review` | two searches: `review-requested:<you> -author:<you>` **and** `reviewed-by:<you> -author:<you>` |
+| `--author alice,bob` | `author:alice author:app/alice author:bob author:app/bob` |
 
 `--review` needs two searches because GitHub search has no OR between these
 qualifiers, and `review-requested:` stops matching as soon as you submit a
@@ -48,6 +49,12 @@ review. `reviewed-by:` covers approvals, change requests, comments and
 dismissed reviews. The results are merged, duplicates removed, sorted newest
 first and cut to `GH_DASHBOARD_LIMIT`. `-author:` leaves out your own PRs,
 where replying to review comments also counts as a review by you.
+
+For `--author`, GitHub ORs repeated `author:` qualifiers, so one search
+covers several people. Each name is also searched as `app/<name>`: bots are
+shown with logins like `dependabot`, but only match `author:app/dependabot`.
+Names must be valid GitHub logins (letters, numbers, `-`, `_`), so they
+can't add other qualifiers to the search.
 
 For each PR it requests the title, author, draft flag, review decision,
 mergeability, up to 20 review requests, up to 20 latest reviews (one per

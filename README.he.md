@@ -69,12 +69,15 @@ gh extension install BenSagir/gh-dashboard
 נכנסים לתיקייה של ריפו מ-GitHub ומריצים:
 
 ```bash
-gh dashboard            # כל ה-PRs הפתוחים
-gh dashboard --mine     # רק PRs שאני פתחתי
-gh dashboard --review   # רק PRs שאני reviewer בהם
+gh dashboard                  # כל ה-PRs הפתוחים
+gh dashboard --mine           # רק PRs שאני פתחתי
+gh dashboard --review         # רק PRs שאני reviewer בהם
+gh dashboard --author alice   # רק PRs ש-alice פתח/ה
 ```
 
 האפשרות --review מציגה כל PR פתוח (שלא אתם פתחתם) שאתם reviewer בו: התבקשתם לסקור ועוד לא סקרתם, אישרתם, ביקשתם שינויים, השארתם הערות, או שה-review שלכם בוטל.
+
+האפשרות --author מציגה PRs של אדם מסוים לפי שם המשתמש שלו ב-GitHub (כמו שמופיע בעמודת AUTHOR). אפשר כמה שמות מופרדים בפסיק, למשל --author alice,bob, ו-bots כמו dependabot עובדים גם כן.
 
 עדכון לגרסה החדשה:
 

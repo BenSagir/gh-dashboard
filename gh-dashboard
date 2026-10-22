@@ -14,6 +14,7 @@ set -euo pipefail
 #   gh dashboard --all
 #   gh dashboard --mine
 #   gh dashboard --review
+#   gh dashboard --author alice[,bob...]
 #
 # Environment:
 #   GH_DASHBOARD_LIMIT=200
@@ -24,7 +25,7 @@ set -euo pipefail
 # Docs: https://github.com/BenSagir/gh-dashboard
 # ============================================================
 
-VERSION="1.1.0"
+VERSION="1.2.0"
 
 
 # ------------------------------------------------------------
@@ -56,23 +57,54 @@ for SETTING in "GH_DASHBOARD_LIMIT=$LIMIT" "GH_DASHBOARD_BATCH=$BATCH"; do
     fi
 done
 
-FILTER="all"
+# ------------------------------------------------------------
+# Options
+# ------------------------------------------------------------
 
-if [[ $# -gt 1 ]]; then
-    echo "Too many arguments: $*" >&2
+FILTER="all"
+FILTER_OPTION=""
+AUTHORS=""
+
+usage_error() {
+    echo "$1" >&2
     echo "Use --help for usage." >&2
     exit 1
-fi
+}
 
-case "${1:-}" in
+# Only one of --all/--mine/--review/--author per run.
+set_filter() {
+    if [[ -n "$FILTER_OPTION" ]]; then
+        usage_error "Use only one of --all, --mine, --review, --author (got $FILTER_OPTION and $2)"
+    fi
+    FILTER="$1"
+    FILTER_OPTION="$2"
+}
+
+while [[ $# -gt 0 ]]; do
+
+    case "$1" in
+
     --mine)
-        FILTER="mine"
+        set_filter mine "$1"
         ;;
     --review)
-        FILTER="review"
+        set_filter review "$1"
         ;;
     --all)
-        FILTER="all"
+        set_filter all "$1"
+        ;;
+    --author)
+        if [[ $# -lt 2 || "$2" == -* ]]; then
+            usage_error "--author needs a name, e.g. --author octocat"
+        fi
+        set_filter author "$1"
+        AUTHORS="$2"
+        shift
+        ;;
+    --author=*)
+        set_filter author "--author"
+        AUTHORS="${1#*=}"
+        [[ -n "$AUTHORS" ]] || usage_error "--author needs a name, e.g. --author octocat"
         ;;
     --help|-h)
         cat <<EOF
@@ -80,11 +112,12 @@ case "${1:-}" in
 GitHub PR Dashboard
 
 Usage:
-  gh dashboard              All open PRs
-  gh dashboard --mine       PRs authored by you
-  gh dashboard --review     PRs you are a reviewer on (requested or reviewed)
-  gh dashboard --all        Same as default
-  gh dashboard --version    Print version
+  gh dashboard                  All open PRs
+  gh dashboard --mine           PRs authored by you
+  gh dashboard --review         PRs you are a reviewer on (requested or reviewed)
+  gh dashboard --author NAME    PRs authored by NAME (several: alice,bob)
+  gh dashboard --all            Same as default
+  gh dashboard --version        Print version
 
 Run it inside a clone of a GitHub repository.
 
@@ -103,14 +136,57 @@ EOF
         echo "gh-dashboard $VERSION"
         exit 0
         ;;
-    "")
-        ;;
     *)
-        echo "Unknown option: $1" >&2
-        echo "Use --help for usage." >&2
-        exit 1
+        usage_error "Unknown option: $1"
         ;;
-esac
+
+    esac
+
+    shift
+
+done
+
+
+# ------------------------------------------------------------
+# --author NAME[,NAME...] -> search qualifiers
+#
+# Several author: qualifiers are ORed by GitHub search. Each
+# name is also searched as app/NAME, because bots show up as
+# "dependabot" but only match author:app/dependabot.
+# A leading @ is dropped (except @me), and a [bot] suffix is
+# accepted. Names are checked so they can't inject other
+# search qualifiers.
+# ------------------------------------------------------------
+
+AUTHOR_QUALIFIERS=""
+
+if [[ "$FILTER" == "author" ]]; then
+
+    IFS=',' read -ra AUTHOR_NAMES <<< "$AUTHORS"
+
+    for NAME in ${AUTHOR_NAMES[@]+"${AUTHOR_NAMES[@]}"}; do
+
+        [[ -z "$NAME" ]] && continue
+
+        if [[ "$NAME" == "@me" ]]; then
+            AUTHOR_QUALIFIERS="$AUTHOR_QUALIFIERS author:@me"
+            continue
+        fi
+
+        NAME="${NAME#@}"
+        NAME="${NAME%\[bot\]}"
+
+        if ! [[ "$NAME" =~ ^[A-Za-z0-9][A-Za-z0-9_-]*$ ]]; then
+            usage_error "Invalid author name: '$NAME' (letters, numbers, - and _ only)"
+        fi
+
+        AUTHOR_QUALIFIERS="$AUTHOR_QUALIFIERS author:$NAME author:app/$NAME"
+
+    done
+
+    [[ -n "$AUTHOR_QUALIFIERS" ]] || usage_error "--author needs a name, e.g. --author octocat"
+
+fi
 
 
 # ------------------------------------------------------------
@@ -325,6 +401,10 @@ case "$FILTER" in
 
     mine)
         SEARCH_QUERIES=("$SEARCH_BASE author:$GH_USER")
+        ;;
+
+    author)
+        SEARCH_QUERIES=("$SEARCH_BASE$AUTHOR_QUALIFIERS")
         ;;
 
     review)

@@ -6,6 +6,19 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+## [1.2.0] - 2026-10-22
+
+### Added
+
+- `--author NAME` (or `--author=NAME`) shows open PRs opened by NAME.
+  Several names can be comma-separated (`--author alice,bob`), `@me` means
+  you, and bots work by the name shown in the table (`dependabot`).
+
+### Changed
+
+- Passing two of `--all`, `--mine`, `--review` and `--author` now says which
+  two were given, instead of "Too many arguments".
+
 ## [1.1.0] - 2026-10-22
 
 ### Fixed
@@ -37,6 +50,7 @@ First public release.
   output is piped.
 - Offline test suite and CI on Linux, macOS (bash 3.2) and Windows.
 
-[Unreleased]: https://github.com/BenSagir/gh-dashboard/compare/v1.1.0...HEAD
+[Unreleased]: https://github.com/BenSagir/gh-dashboard/compare/v1.2.0...HEAD
+[1.2.0]: https://github.com/BenSagir/gh-dashboard/compare/v1.1.0...v1.2.0
 [1.1.0]: https://github.com/BenSagir/gh-dashboard/compare/v1.0.0...v1.1.0
 [1.0.0]: https://github.com/BenSagir/gh-dashboard/releases/tag/v1.0.0

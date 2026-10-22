@@ -75,7 +75,8 @@ Windows. After installing, open a new terminal.
 
 ## A PR I just opened is missing
 
-`--mine` and `--review` (and the default view) use GitHub's search, which can
+`--mine`, `--review` and `--author` (and the default view) use GitHub's
+search, which can
 take up to a minute to include a brand-new PR. Run it again shortly.
 
 If your repo has more open PRs than `GH_DASHBOARD_LIMIT` (200 by default),

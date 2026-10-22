@@ -41,9 +41,10 @@ gh extension install BenSagir/gh-dashboard
 **2. Run** inside a clone of your repository:
 
 ```bash
-gh dashboard            # all open PRs
-gh dashboard --mine     # PRs you opened
-gh dashboard --review   # PRs you're a reviewer on
+gh dashboard                  # all open PRs
+gh dashboard --mine           # PRs you opened
+gh dashboard --review         # PRs you're a reviewer on
+gh dashboard --author alice   # PRs opened by alice (or alice,bob)
 ```
 
 **3. Update** when a new version is out:
@@ -99,9 +100,10 @@ upgrading and uninstalling: **[docs/installation.md](docs/installation.md)**.
 Run it inside a clone of any GitHub repository:
 
 ```bash
-gh dashboard            # all open PRs
-gh dashboard --mine     # PRs you opened
-gh dashboard --review   # PRs you're a reviewer on
+gh dashboard                  # all open PRs
+gh dashboard --mine           # PRs you opened
+gh dashboard --review         # PRs you're a reviewer on
+gh dashboard --author alice   # PRs opened by alice (or alice,bob)
 ```
 
 | Option | |
@@ -109,6 +111,7 @@ gh dashboard --review   # PRs you're a reviewer on
 | `--all` | All open PRs (default) |
 | `--mine` | PRs you authored |
 | `--review` | PRs you're a reviewer on: asked to review, or already reviewed |
+| `--author NAME` | PRs opened by NAME. Several: `--author alice,bob` |
 | `--version`, `-v` | Print the version |
 | `--help`, `-h` | Print help |
 

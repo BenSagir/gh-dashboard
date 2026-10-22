@@ -31,6 +31,7 @@ a `Fetching PRs… N` counter shows progress.
 | *(none)* or `--all` | All open PRs |
 | `--mine` | Open PRs you authored |
 | `--review` | Open PRs you're a reviewer on, see below |
+| `--author NAME` | Open PRs opened by NAME, see below |
 | `--version`, `-v` | The installed version |
 | `--help`, `-h` | Help |
 
@@ -52,6 +53,26 @@ Every open PR, except your own, where you are a reviewer:
 GitHub stops listing you as "requested" once you submit a review, so the
 dashboard combines two searches (`review-requested:` and `reviewed-by:`)
 to keep PRs you've already reviewed in the list.
+
+### `--author`
+
+Shows open PRs opened by one or more people:
+
+```bash
+gh dashboard --author alice          # one person
+gh dashboard --author alice,bob      # several, comma-separated
+gh dashboard --author=alice          # same as --author alice
+gh dashboard --author dependabot     # bots work too
+```
+
+- Use the GitHub login, as shown in the AUTHOR column. Case doesn't matter,
+  and a leading `@` is fine (`@alice`).
+- `@me` means you, the same as `--mine`.
+- Bots can be written as shown in the table (`dependabot`) or with
+  `[bot]` (`dependabot[bot]`).
+- A name that doesn't exist shows an empty table, not an error.
+- Only one of `--all`, `--mine`, `--review` and `--author` can be used at a
+  time.
 
 ## Reading the table
 
