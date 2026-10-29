@@ -124,6 +124,7 @@ gh dashboard --author alice   # PRs opened by alice (or alice,bob)
 |---|---|---|
 | `GH_DASHBOARD_LIMIT` | `200` | Maximum number of PRs to show |
 | `GH_DASHBOARD_BATCH` | `20` | PRs fetched per API request |
+| `GH_DASHBOARD_PROGRESS` | | `0` hides the progress bar, `1` shows it even when piped |
 | `NO_COLOR` | | Set to disable colors and links |
 | `CLICOLOR_FORCE` | | Set to `1` to keep colors when piping |
 

@@ -11,6 +11,10 @@
 #   FAKE_PRS_REQUESTED  used instead when the query has review-requested:
 #   FAKE_PRS_REVIEWED   used instead when the query has reviewed-by:
 #   FAKE_FAIL_FIRST   fail the first N graphql calls with HTTP 504
+#   FAKE_FAIL_CALLS   fail these graphql calls (e.g. "2 3") with HTTP 504
+#   FAKE_DELAY        seconds each graphql call takes (e.g. 0.5)
+#   FAKE_DELAY_PER_PR extra seconds per requested PR, detail requests only
+#   FAKE_SLOW_CALLS   these graphql calls (e.g. "3") also take FAKE_SLOW_DELAY
 #   FAKE_STATE_DIR    scratch dir for call counters
 #   FAKE_LOG          every call is appended here, one per line
 #
@@ -124,7 +128,13 @@ case "${1:-} ${2:-}" in
         after=$(field after "$@")
         echo "graphql first=$first after=${after:-none} q=$(field q "$@")" >> "${FAKE_LOG:-/dev/null}"
 
-        if [[ "$calls" -le "${FAKE_FAIL_FIRST:-0}" ]]; then
+        # Simulated latency: fixed, plus per PR for detail requests
+        # (the ones asking for mergeability), plus chosen slow calls.
+        delay=$(field query "$@" | grep -q mergeStateStatus && echo "${FAKE_DELAY_PER_PR:-0}" || echo 0)
+        delay=$(awk -v a="${FAKE_DELAY:-0}" -v p="$delay" -v n="$first" -v s="$( [[ " ${FAKE_SLOW_CALLS:-} " == *" $calls "* ]] && echo "${FAKE_SLOW_DELAY:-0}" || echo 0 )" 'BEGIN { print a + p * n + s }')
+        sleep "$delay"
+
+        if [[ "$calls" -le "${FAKE_FAIL_FIRST:-0}" || " ${FAKE_FAIL_CALLS:-} " == *" $calls "* ]]; then
             echo "HTTP 504: 504 Gateway Timeout (https://api.github.com/graphql)" >&2
             exit 1
         fi

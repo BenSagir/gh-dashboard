@@ -21,13 +21,14 @@ set -euo pipefail
 # Environment:
 #   GH_DASHBOARD_LIMIT=200
 #   GH_DASHBOARD_BATCH=20
+#   GH_DASHBOARD_PROGRESS=0  hide the progress bar (1: show it even when piped)
 #   NO_COLOR=1           disable colors and links
 #   CLICOLOR_FORCE=1     keep colors when piping (e.g. to less -R)
 #
 # Docs: https://github.com/BenSagir/gh-dashboard
 # ============================================================
 
-VERSION="1.3.0"
+VERSION="1.4.0"
 
 
 # ------------------------------------------------------------
@@ -139,6 +140,7 @@ Run it inside a clone of a GitHub repository.
 Environment:
   GH_DASHBOARD_LIMIT=200    Max PRs to show
   GH_DASHBOARD_BATCH=20     PRs per API request (lower if you get 504s)
+  GH_DASHBOARD_PROGRESS=0   Hide the progress bar (1: show even when piped)
   NO_COLOR=1                Disable colors and clickable links
   CLICOLOR_FORCE=1          Keep colors when output is piped
 
@@ -527,7 +529,18 @@ query($q: String!, $first: Int!, $after: String) {
 SHOW_BAR=0
 [[ -t 2 && "$VERBOSE" == 0 ]] && SHOW_BAR=1
 
+# GH_DASHBOARD_PROGRESS=0 hides the bar; =1 shows it even when
+# stderr isn't a terminal (the tests use this).
+case "${GH_DASHBOARD_PROGRESS:-}" in
+    0) SHOW_BAR=0 ;;
+    1) [[ "$VERBOSE" == 0 ]] && SHOW_BAR=1 ;;
+esac
+
 now() { perl -MTime::HiRes=time -e 'printf "%.2f", time'; }
+
+# Milliseconds since the epoch, optionally after sleeping
+# SECONDS first (one process for both, which matters on Windows).
+now_ms() { perl -MTime::HiRes=time,sleep -e 'sleep $ARGV[0]; printf "%d", time * 1000' "${1:-0}"; }
 
 # Seconds since a now() timestamp, e.g. "2.4s".
 elapsed() { perl -e 'printf "%.1fs", $ARGV[1] - $ARGV[0]' "$1" "$(now)"; }
@@ -537,20 +550,134 @@ vlog() {
     return 0
 }
 
-# progress DONE TOTAL
+BAR_WIDTH=30
+BAR_PARTS=("░" "▏" "▎" "▍" "▌" "▋" "▊" "▉")   # 0/8 .. 7/8 of a cell
+
+# What's on screen. The bar never moves backwards, so a retry
+# with a smaller batch, or an estimate that ran ahead, just
+# holds it in place.
+BAR_EIGHTHS=0
+BAR_COUNT=0
+
+# draw_bar EIGHTHS COUNT TOTAL: EIGHTHS of the BAR_WIDTH cells
+# filled, in eighths of a cell for smooth movement.
+draw_bar() {
+    local eighths="$1" count="$2" total="$3" full i bar=""
+
+    [[ "$eighths" -lt "$BAR_EIGHTHS" ]] && eighths="$BAR_EIGHTHS"
+    [[ "$count" -lt "$BAR_COUNT" ]] && count="$BAR_COUNT"
+    BAR_EIGHTHS="$eighths"
+    BAR_COUNT="$count"
+
+    full=$(( eighths / 8 ))
+    for (( i = 0; i < full; i++ )); do bar="$bar█"; done
+    if [[ "$full" -lt "$BAR_WIDTH" ]]; then
+        bar="$bar${BAR_PARTS[eighths % 8]}"
+        for (( i = full + 1; i < BAR_WIDTH; i++ )); do bar="$bar░"; done
+    fi
+
+    printf '\r Fetching PRs %s %d/%d' "$bar" "$count" "$total" >&2
+}
+
+# progress DONE TOTAL: jump to an exact count.
 progress() {
     [[ "$SHOW_BAR" == 1 ]] || return 0
-    local current="$1" total="$2" width=30 filled
+    local current="$1" total="$2"
     if [[ "$total" -le 0 ]]; then
-        printf '\r Fetching PRs… %d' "$current" >&2
+        printf '\r Counting open PRs…' >&2
         return 0
     fi
     [[ "$current" -gt "$total" ]] && current="$total"
-    filled=$(( current * width / total ))
-    printf '\r Fetching PRs %s%s %d/%d' \
-        "$(printf '%*s' "$filled" '' | sed 's/ /█/g')" \
-        "$(printf '%*s' $(( width - filled )) '' | sed 's/ /░/g')" \
-        "$current" "$total" >&2
+    draw_bar $(( current * BAR_WIDTH * 8 / total )) "$current" "$total"
+}
+
+
+# ------------------------------------------------------------
+# Animating the bar during a request
+#
+# A detail request returns a whole batch at once, after a few
+# seconds. Meanwhile the bar moves from where it is toward one
+# PR short of the batch's end, at the expected speed, and holds
+# there until the response arrives; then it jumps to the real
+# count.
+#
+# Expected request time = FIXED_MS + MS_PER_PR x PRs, measured
+# on this machine and network. The first two detail requests
+# are small (1 and 5 PRs) so the fixed and per-PR costs can be
+# told apart; after that both come from a best-fit line through
+# every request so far. (The count request is cheaper than any
+# detail request, so it only seeds the first guess.)
+# ------------------------------------------------------------
+
+ANIMATE=0
+ANIM_BASE=0          # PRs fetched when the current request started
+OVERHEAD_MS=0        # time of the count request
+FIXED_MS=0           # fixed cost of a detail request
+MS_PER_PR=250        # extra time per PR in a detail request
+CALIBRATION_SIZES="" # sizes of the first detail requests, e.g. "1 5"
+
+# Least-squares fit of request time (ms) against PRs requested.
+FIT_K=0 FIT_SN=0 FIT_ST=0 FIT_SNN=0 FIT_SNT=0
+
+# fit_add PRS MS: record a detail request and update the estimate.
+fit_add() {
+    local n="$1" t="$2" denominator
+    FIT_K=$(( FIT_K + 1 ))
+    FIT_SN=$(( FIT_SN + n ))
+    FIT_ST=$(( FIT_ST + t ))
+    FIT_SNN=$(( FIT_SNN + n * n ))
+    FIT_SNT=$(( FIT_SNT + n * t ))
+    denominator=$(( FIT_K * FIT_SNN - FIT_SN * FIT_SN ))
+
+    if [[ "$denominator" -gt 0 ]]; then
+        # Two or more sizes seen: slope and intercept of the fit.
+        MS_PER_PR=$(( (FIT_K * FIT_SNT - FIT_SN * FIT_ST) / denominator ))
+        [[ "$MS_PER_PR" -lt 20 ]] && MS_PER_PR=20
+        FIXED_MS=$(( (FIT_ST - MS_PER_PR * FIT_SN) / FIT_K ))
+    else
+        # One size only: assume half of what this request cost
+        # beyond the count request scales with the PRs.
+        MS_PER_PR=$(( (t - OVERHEAD_MS) / 2 / n ))
+        [[ "$MS_PER_PR" -lt 20 ]] && MS_PER_PR=20
+        FIXED_MS=$(( t - MS_PER_PR * n ))
+    fi
+    [[ "$FIXED_MS" -lt 0 ]] && FIXED_MS=0
+    return 0
+}
+
+# animate_frame ELAPSED_MS FIRST
+animate_frame() {
+    local elapsed="$1" first="$2" expected target
+
+    expected=$(( FIXED_MS + MS_PER_PR * first ))
+    [[ "$expected" -gt 0 ]] || expected=1
+    [[ "$elapsed" -gt "$expected" ]] && elapsed="$expected"
+
+    target=$(( ANIM_BASE + first - 1 ))
+    [[ "$target" -ge "$TOTAL" ]] && target=$(( TOTAL - 1 ))
+    [[ "$target" -lt "$ANIM_BASE" ]] && target="$ANIM_BASE"
+
+    draw_bar \
+        $(( (ANIM_BASE * expected + (target - ANIM_BASE) * elapsed) * BAR_WIDTH * 8 / (TOTAL * expected) )) \
+        $(( ANIM_BASE + (target - ANIM_BASE) * elapsed / expected )) \
+        "$TOTAL"
+}
+
+# Background requests write here; removed on exit.
+PAGE_FILE=""
+cleanup() {
+    if [[ -n "$PAGE_FILE" ]]; then rm -f "$PAGE_FILE"; fi
+    return 0
+}
+trap cleanup EXIT
+
+# run_search QUERY SEARCH FIRST CURSOR: one search request.
+run_search() {
+    gh api graphql \
+        -f query="$1" \
+        -f q="$2" \
+        -F first="$3" \
+        ${4:+-f after="$4"}
 }
 
 progress_clear() {
@@ -570,17 +697,36 @@ progress_clear() {
 
 fetch_page() {
     local query="$1" search="$2" first="$3" cursor="$4"
-    local attempt=1 started=""
+    local attempt=1 started="" ok pid start_ms now_ms_value
 
     while true; do
 
         [[ "$VERBOSE" == 1 ]] && started=$(now)
 
-        if PAGE=$(gh api graphql \
-                -f query="$query" \
-                -f q="$search" \
-                -F first="$first" \
-                ${cursor:+-f after="$cursor"} 2>&1); then
+        if [[ "$ANIMATE" == 1 ]]; then
+
+            # Request in the background; animate until it's done.
+            [[ -n "$PAGE_FILE" ]] || PAGE_FILE=$(mktemp)
+            start_ms=$(now_ms)
+            run_search "$query" "$search" "$first" "$cursor" > "$PAGE_FILE" 2>&1 &
+            pid=$!
+            now_ms_value="$start_ms"
+            while kill -0 "$pid" 2>/dev/null; do
+                animate_frame $(( now_ms_value - start_ms )) "$first"
+                now_ms_value=$(now_ms 0.1)
+            done
+            if wait "$pid"; then ok=1; else ok=0; fi
+            PAGE=$(cat "$PAGE_FILE")
+
+            PAGE_MS=$(( $(now_ms) - start_ms ))
+
+        else
+
+            if PAGE=$(run_search "$query" "$search" "$first" "$cursor" 2>&1); then ok=1; else ok=0; fi
+
+        fi
+
+        if [[ "$ok" == 1 ]]; then
             PAGE_FIRST="$first"
             PAGE_TIME=""
             [[ "$VERBOSE" == 1 ]] && PAGE_TIME=$(elapsed "$started")
@@ -693,7 +839,10 @@ if [[ "$NEED_AUTHORS" == 1 || "$SHOW_BAR" == 1 ]]; then
     done
 
     progress 0 0
+    COUNT_STARTED=$(now_ms)
     search_meta "$NEED_AUTHORS"
+    # One request per search: their average is the fixed cost.
+    OVERHEAD_MS=$(( ($(now_ms) - COUNT_STARTED) / ${#SEARCH_QUERIES[@]} ))
 
     # What the detail fetch will request: each search up to LIMIT.
     for COUNT in $QUERY_TOTALS; do
@@ -770,6 +919,13 @@ if [[ "$VERBOSE" == 1 ]]; then
     vlog "Fetching details, $BATCH PRs per request"
 fi
 
+# Animate the bar only when there's a bar and a known total.
+if [[ "$SHOW_BAR" == 1 && "$TOTAL" -gt 0 ]]; then
+    ANIMATE=1
+    CALIBRATION_SIZES="1 5"
+    FIXED_MS="$OVERHEAD_MS"
+fi
+
 for SEARCH_QUERY in "${SEARCH_QUERIES[@]}"; do
 
     FETCHED=0
@@ -778,10 +934,22 @@ for SEARCH_QUERY in "${SEARCH_QUERIES[@]}"; do
     while (( FETCHED < LIMIT )); do
 
         FIRST=$(( LIMIT - FETCHED < PAGE_SIZE ? LIMIT - FETCHED : PAGE_SIZE ))
+        # Calibration: the first detail requests are small.
+        NEXT_SIZE="${CALIBRATION_SIZES%% *}"
+        if [[ -n "$NEXT_SIZE" && "$NEXT_SIZE" -lt "$FIRST" ]]; then FIRST="$NEXT_SIZE"; fi
 
         progress "$TOTAL_FETCHED" "$TOTAL"
 
+        ANIM_BASE="$TOTAL_FETCHED"
         fetch_page "$PR_QUERY" "$SEARCH_QUERY" "$FIRST" "$CURSOR"
+
+        if [[ "$ANIMATE" == 1 ]]; then
+            fit_add "$PAGE_FIRST" "$PAGE_MS"
+            case "$CALIBRATION_SIZES" in
+                *" "*) CALIBRATION_SIZES="${CALIBRATION_SIZES#* }" ;;
+                *)     CALIBRATION_SIZES="" ;;
+            esac
+        fi
 
         # After a failure the batch shrank: grow it back toward
         # BATCH, doubling with each request that works.

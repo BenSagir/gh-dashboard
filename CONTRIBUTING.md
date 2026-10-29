@@ -13,6 +13,7 @@ tests/
   test_fetch.sh         search filters, batching, limit, retries
   test_render.sh        columns, statuses, alignment, colors, links
   test_overview.sh      --author-list, --verbose and the totals pass
+  test_progress.sh      the animated progress bar and its speed estimate
   test_platform.sh      Windows line endings, file hygiene
   fake-bin/gh           fake GitHub CLI used by the tests
   fixtures/states.json  sample PRs covering every status
@@ -46,6 +47,11 @@ environment variables and a fixture file:
 | `FAKE_REPO_TOKEN` | Only this token can see the repo (tests the account fallback) |
 | `FAKE_PRS` | JSON file with an array of PR search nodes |
 | `FAKE_FAIL_FIRST` | Fail the first N GraphQL calls with `HTTP 504` |
+| `FAKE_FAIL_CALLS` | Fail these GraphQL calls, e.g. `"3 4"` |
+| `FAKE_DELAY` | Seconds every GraphQL call takes |
+| `FAKE_DELAY_PER_PR` | Extra seconds per requested PR, detail requests only |
+| `FAKE_SLOW_CALLS`, `FAKE_SLOW_DELAY` | Make these GraphQL calls take extra seconds |
+| `FAKE_PRS_REQUESTED`, `FAKE_PRS_REVIEWED` | Fixtures for the two `--review` searches |
 | `FAKE_LOG` | Every call is appended here, so tests can check what was requested |
 
 Each test runs in its own temporary git repository with defaults from

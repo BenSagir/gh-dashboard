@@ -14,6 +14,7 @@ test_help_lists_every_option() {
     assert_contains "gh dashboard --version"
     assert_contains "GH_DASHBOARD_LIMIT"
     assert_contains "GH_DASHBOARD_BATCH"
+    assert_contains "GH_DASHBOARD_PROGRESS"
     assert_contains "NO_COLOR"
 }
 

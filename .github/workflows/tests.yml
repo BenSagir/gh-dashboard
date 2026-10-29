@@ -23,8 +23,9 @@ jobs:
   test:
     name: test (${{ matrix.os }})
     runs-on: ${{ matrix.os }}
-    # Windows is slow to start processes; Linux finishes in about a minute.
-    timeout-minutes: 30
+    # Windows is slow to start processes (the suite takes ~25-35 min
+    # there); Linux and macOS finish in a couple of minutes.
+    timeout-minutes: 60
     strategy:
       fail-fast: false
       matrix:

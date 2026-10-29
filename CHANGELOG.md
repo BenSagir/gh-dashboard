@@ -6,6 +6,22 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+## [1.4.0] - 2026-10-29
+
+### Changed
+
+- The progress bar moves smoothly while each batch downloads instead of
+  jumping 0 → 20 → 40. It advances at the speed measured on your machine
+  and network, holds one PR short of the batch's end until the batch
+  arrives, then jumps to the real count. To measure the speed, the first
+  two detail requests fetch 1 and 5 PRs (about a second extra, only when
+  the bar is shown).
+
+### Added
+
+- `GH_DASHBOARD_PROGRESS`: `0` hides the progress bar, `1` shows it even
+  when stderr isn't a terminal.
+
 ## [1.3.0] - 2026-10-29
 
 ### Added
@@ -63,7 +79,8 @@ First public release.
   output is piped.
 - Offline test suite and CI on Linux, macOS (bash 3.2) and Windows.
 
-[Unreleased]: https://github.com/BenSagir/gh-dashboard/compare/v1.3.0...HEAD
+[Unreleased]: https://github.com/BenSagir/gh-dashboard/compare/v1.4.0...HEAD
+[1.4.0]: https://github.com/BenSagir/gh-dashboard/compare/v1.3.0...v1.4.0
 [1.3.0]: https://github.com/BenSagir/gh-dashboard/compare/v1.2.0...v1.3.0
 [1.2.0]: https://github.com/BenSagir/gh-dashboard/compare/v1.1.0...v1.2.0
 [1.1.0]: https://github.com/BenSagir/gh-dashboard/compare/v1.0.0...v1.1.0

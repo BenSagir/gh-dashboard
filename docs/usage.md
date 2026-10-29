@@ -28,6 +28,13 @@ a progress bar shows how many PRs have been fetched out of the total:
  Fetching PRs ██████████████████████░░░░░░░░ 40/57
 ```
 
+GitHub returns PRs in batches, so the bar doesn't just jump from 0 to 20 to
+40: while a batch downloads, it moves at the speed measured on your machine
+and network, stops one PR short of the batch's end, and jumps to the real
+count when the batch arrives. To measure that speed, the first two requests
+are small (1 and 5 PRs), which adds about a second to the run. See
+[how it works](how-it-works.md#progress-bar-animation).
+
 ## Options
 
 | Option | Shows |
@@ -210,6 +217,7 @@ Set these as environment variables, for one run or in your shell profile:
 | `GH_DASHBOARD_BATCH` | `20` | PRs per API request. Lower it if you see `HTTP 504` errors; raising it above ~25 tends to cause them. |
 | `NO_COLOR` | unset | Any value disables colors and links ([no-color.org](https://no-color.org)) |
 | `CLICOLOR_FORCE` | unset | `1` keeps colors and links when output isn't a terminal |
+| `GH_DASHBOARD_PROGRESS` | unset | `0` hides the progress bar; `1` shows it even when stderr isn't a terminal |
 
 Both numbers must be positive whole numbers.
 

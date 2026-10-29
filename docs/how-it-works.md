@@ -37,12 +37,45 @@ doesn't compute mergeability or CI for it.
 
 | When | What it fetches |
 |---|---|
-| Output is a terminal | One PR per search, just to read the total for the progress bar |
+| Output is a terminal | One PR per search, just to read the total for the progress bar (and time a request) |
 | `--verbose` or `--author-list` | Every match, 100 per request: number and author |
 | Output piped, no `--verbose` | Nothing; this pass is skipped |
 
 `--author-list` stops after this pass. Everything else continues with the
 detail fetch below.
+
+### Progress bar animation
+
+A detail request returns its whole batch at once, after a few seconds, so a
+bar that only moved when data arrived would jump 0, 20, 40. Instead, while
+a request is in flight, the request runs in the background and the bar is
+redrawn about 10 times a second:
+
+- It moves from the current count toward **one PR short** of the batch's
+  end, at the expected speed, and **holds** there until the response
+  arrives.
+- When the response arrives it **jumps** to the real count, even if the
+  animation hadn't got there yet.
+- It **never moves backwards**, including when a failed request is retried
+  with a smaller batch.
+- It moves in eighths of a cell (`▏▎▍▌▋▊▉`), so it looks smooth.
+
+The expected time of a request is `fixed + per-PR × PRs`, measured on your
+machine and network rather than built in:
+
+1. The count request gives a first guess of the fixed cost.
+2. The first detail request asks for **1 PR**: roughly the fixed cost of a
+   detail request, which is higher than the count request's because GitHub
+   computes mergeability and CI.
+3. The second asks for **5 PRs**. The difference gives the per-PR cost.
+4. From then on both come from a least-squares line through every request
+   so far, so network noise averages out.
+
+One request can't do this alone: a 1-PR request taking 1.2s doesn't mean 20
+PRs take 24s, since most of that 1.2s is the fixed part (in practice 20 PRs
+take about 5s). The small requests fetch real PRs, so nothing is fetched
+twice; the cost is one or two extra round trips. This all happens only
+when the bar is shown.
 
 ### Detail fetch
 
