@@ -28,7 +28,7 @@ set -euo pipefail
 # Docs: https://github.com/BenSagir/gh-dashboard
 # ============================================================
 
-VERSION="1.4.0"
+VERSION="1.4.1"
 
 
 # ------------------------------------------------------------
@@ -570,10 +570,10 @@ draw_bar() {
     BAR_COUNT="$count"
 
     full=$(( eighths / 8 ))
-    for (( i = 0; i < full; i++ )); do bar="$bar█"; done
+    for (( i = 0; i < full; i++ )); do bar="${bar}█"; done
     if [[ "$full" -lt "$BAR_WIDTH" ]]; then
         bar="$bar${BAR_PARTS[eighths % 8]}"
-        for (( i = full + 1; i < BAR_WIDTH; i++ )); do bar="$bar░"; done
+        for (( i = full + 1; i < BAR_WIDTH; i++ )); do bar="${bar}░"; done
     fi
 
     printf '\r Fetching PRs %s %d/%d' "$bar" "$count" "$total" >&2

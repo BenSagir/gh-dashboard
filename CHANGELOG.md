@@ -6,6 +6,16 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+## [1.4.1] - 2026-10-29
+
+### Fixed
+
+- The progress bar crashed with `bar…: unbound variable` in terminals using a
+  UTF-8 locale (most macOS and Linux setups). Under such a locale, macOS's
+  bash 3.2 read the start of the `█` character as part of a variable name.
+  The tests now also run the dashboard under a UTF-8 locale and check for
+  this pattern.
+
 ## [1.4.0] - 2026-10-29
 
 ### Changed
@@ -79,7 +89,8 @@ First public release.
   output is piped.
 - Offline test suite and CI on Linux, macOS (bash 3.2) and Windows.
 
-[Unreleased]: https://github.com/BenSagir/gh-dashboard/compare/v1.4.0...HEAD
+[Unreleased]: https://github.com/BenSagir/gh-dashboard/compare/v1.4.1...HEAD
+[1.4.1]: https://github.com/BenSagir/gh-dashboard/compare/v1.4.0...v1.4.1
 [1.4.0]: https://github.com/BenSagir/gh-dashboard/compare/v1.3.0...v1.4.0
 [1.3.0]: https://github.com/BenSagir/gh-dashboard/compare/v1.2.0...v1.3.0
 [1.2.0]: https://github.com/BenSagir/gh-dashboard/compare/v1.1.0...v1.2.0

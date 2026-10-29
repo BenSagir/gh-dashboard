@@ -63,3 +63,43 @@ test_script_is_executable() {
 test_script_has_valid_syntax() {
     bash -n "$SCRIPT" || fail "bash -n failed"
 }
+
+# A UTF-8 locale available on this machine, if any.
+utf8_locale() {
+    locale -a 2>/dev/null | tr -d '\r' | grep -i -m1 -E '^(C|en_US)\.utf-?8$' || true
+}
+
+test_no_variable_runs_into_a_non_ascii_character() {
+    # Under a UTF-8 locale bash 3.2 can read "$bar█" as a variable named
+    # "bar" plus the first byte of █, which then fails under set -u.
+    # Such variables must be written ${bar}█.
+    local hits
+    hits="$(perl -ne 'print "$.: $_" if /\$[A-Za-z_][A-Za-z0-9_]*[^\x00-\x7F]/' "$SCRIPT")"
+    [[ -z "$hits" ]] || fail "unbraced variable before a non-ASCII character:
+$hits"
+}
+
+test_works_under_a_utf8_locale() {
+    local loc; loc="$(utf8_locale)"
+    if [[ -z "$loc" ]]; then
+        echo "    (skipped: no UTF-8 locale installed)" >&2
+        return 0
+    fi
+    dashboard
+    local expected; expected="$(stable_output)"
+
+    export LC_ALL="$loc" GH_DASHBOARD_PROGRESS=1
+    local stdout
+    set +e
+    stdout="$(cd "$WORK" && "$SCRIPT" 2>"$TEST_TMP/stderr")"
+    # shellcheck disable=SC2034  # read by assert_status (tests/lib.sh)
+    STATUS=$?
+    set -e
+    OUTPUT="$stdout"
+    assert_status 0
+    if grep -q 'unbound variable' "$TEST_TMP/stderr"; then
+        fail "under $loc: $(cat "$TEST_TMP/stderr")"
+    fi
+    grep -q 'Fetching PRs' "$TEST_TMP/stderr" || fail "under $loc: progress bar not drawn"
+    assert_eq "$(stable_output)" "$expected" "table under $loc"
+}
