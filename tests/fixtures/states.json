@@ -29,7 +29,7 @@
   {
     "number": 104, "title": "Update dependencies", "url": "https://github.com/acme/widgets/pull/104",
     "isDraft": true, "reviewDecision": "REVIEW_REQUIRED", "mergeable": "MERGEABLE", "mergeStateStatus": "DRAFT",
-    "author": {"login": "dependabot"},
+    "author": {"__typename": "Bot", "login": "dependabot"},
     "reviewRequests": {"nodes": []},
     "latestReviews": {"nodes": []},
     "commits": {"nodes": [{"commit": {"statusCheckRollup": {"state": "PENDING"}}}]}

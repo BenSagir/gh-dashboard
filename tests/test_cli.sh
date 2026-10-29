@@ -8,6 +8,8 @@ test_help_lists_every_option() {
     assert_contains "gh dashboard --mine"
     assert_contains "gh dashboard --review"
     assert_contains "gh dashboard --author NAME"
+    assert_contains "gh dashboard --author-list"
+    assert_contains "gh dashboard --verbose"
     assert_contains "gh dashboard --all"
     assert_contains "gh dashboard --version"
     assert_contains "GH_DASHBOARD_LIMIT"

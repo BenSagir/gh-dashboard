@@ -73,11 +73,17 @@ gh dashboard                  # כל ה-PRs הפתוחים
 gh dashboard --mine           # רק PRs שאני פתחתי
 gh dashboard --review         # רק PRs שאני reviewer בהם
 gh dashboard --author alice   # רק PRs ש-alice פתח/ה
+gh dashboard --author-list    # מי פתח PRs, וכמה לכל אחד
+gh dashboard --verbose        # פירוט של שלבי הטעינה
 ```
 
 האפשרות --review מציגה כל PR פתוח (שלא אתם פתחתם) שאתם reviewer בו: התבקשתם לסקור ועוד לא סקרתם, אישרתם, ביקשתם שינויים, השארתם הערות, או שה-review שלכם בוטל.
 
 האפשרות --author מציגה PRs של אדם מסוים לפי שם המשתמש שלו ב-GitHub (כמו שמופיע בעמודת AUTHOR). אפשר כמה שמות מופרדים בפסיק, למשל --author alice,bob, ו-bots כמו dependabot עובדים גם כן.
+
+האפשרות --author-list מציגה את כל מי שיש לו PRs פתוחים, וכמה לכל אחד. היא מהירה (שנייה-שתיים), ואפשר לשלב אותה עם סינון, למשל gh dashboard --review --author-list כדי לראות של מי ה-PRs שאתם סוקרים.
+
+בזמן הטעינה מוצג פס התקדמות עם המספר הכולל. עם --verbose מוצגים גם הסיכום (כמה PRs ומאיזה כותבים) וכל שלב בטעינה.
 
 עדכון לגרסה החדשה:
 

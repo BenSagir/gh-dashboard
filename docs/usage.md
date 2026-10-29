@@ -22,7 +22,11 @@ gh dashboard
 ```
 
 It shows that repository's open pull requests, newest first. While it loads,
-a `Fetching PRs… N` counter shows progress.
+a progress bar shows how many PRs have been fetched out of the total:
+
+```
+ Fetching PRs ██████████████████████░░░░░░░░ 40/57
+```
 
 ## Options
 
@@ -32,10 +36,13 @@ a `Fetching PRs… N` counter shows progress.
 | `--mine` | Open PRs you authored |
 | `--review` | Open PRs you're a reviewer on, see below |
 | `--author NAME` | Open PRs opened by NAME, see below |
+| `--author-list` | Who has open PRs, with counts, see below |
+| `--verbose` | Totals and each fetch step, see below |
 | `--version`, `-v` | The installed version |
 | `--help`, `-h` | Help |
 
-Pass at most one option. "You" means the GitHub account the dashboard uses
+Pass at most one of `--all`, `--mine`, `--review` and `--author`.
+`--author-list` and `--verbose` can be added to any of them. "You" means the GitHub account the dashboard uses
 for the repository, normally your active `gh` account (see
 [several accounts](installation.md#several-github-accounts)).
 
@@ -73,6 +80,52 @@ gh dashboard --author dependabot     # bots work too
 - A name that doesn't exist shows an empty table, not an error.
 - Only one of `--all`, `--mine`, `--review` and `--author` can be used at a
   time.
+
+### `--author-list`
+
+Lists everyone with open PRs and how many each has, most first:
+
+```
+ Open PR authors — acme/widgets
+ 14 PRs by 7 authors
+
+   PRS  AUTHOR
+     3  alice
+     3  bob
+     2  dave
+     1  dependabot (bot)
+     1  (deleted user)
+```
+
+It only asks GitHub for each PR's number and author, so it takes a second
+or two even on big repositories, and it counts every open PR, regardless of
+`GH_DASHBOARD_LIMIT`. Combine it with a filter to narrow it down:
+
+```bash
+gh dashboard --author-list              # everyone with open PRs
+gh dashboard --review --author-list     # whose PRs you're reviewing
+```
+
+Then look at one person's PRs with `gh dashboard --author <name>`.
+
+### `--verbose`
+
+Prints what the dashboard is doing, before the table:
+
+```
+ Search: repo:acme/widgets is:pr is:open sort:created-desc
+ Found 57 open PRs by 12 authors: alice 10, bob 8, carol 7, dave 5, erin 4, … (+7 more)
+ Fetching details, 20 PRs per request
+   batch 1: 20 PRs in 5.5s (20/57)
+   request failed (HTTP 504: 504 Gateway Timeout ...), retrying with 10
+   batch 2: 10 PRs in 2.6s (30/57)
+   ...
+ Fetched 57 PRs in 19.4s
+```
+
+Useful to see why a run is slow, which batches GitHub timed out on, or what
+search was sent. The log goes to stderr, so `gh dashboard --verbose > prs.txt`
+saves only the table.
 
 ## Reading the table
 

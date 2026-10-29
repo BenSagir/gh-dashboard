@@ -55,6 +55,8 @@ Four requests in a row failed, even with the batch size halved each time.
 - If it mentions `rate limit`, wait for the time shown and try again, or
   lower `GH_DASHBOARD_LIMIT` to make fewer requests.
 - Check [githubstatus.com](https://www.githubstatus.com).
+- Run with `--verbose` to see each request, how long it took and which one
+  failed.
 
 ## `jq: command not found` / `perl: command not found`
 
@@ -112,3 +114,4 @@ These settings must be positive whole numbers, e.g.
 - your OS and terminal
 - the command you ran and the full error, with private repo names and
   usernames removed
+- if it's about fetching, the output of the same command with `--verbose`

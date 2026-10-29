@@ -15,6 +15,8 @@ set -euo pipefail
 #   gh dashboard --mine
 #   gh dashboard --review
 #   gh dashboard --author alice[,bob...]
+#   gh dashboard --author-list
+#   gh dashboard --verbose
 #
 # Environment:
 #   GH_DASHBOARD_LIMIT=200
@@ -25,7 +27,7 @@ set -euo pipefail
 # Docs: https://github.com/BenSagir/gh-dashboard
 # ============================================================
 
-VERSION="1.2.0"
+VERSION="1.3.0"
 
 
 # ------------------------------------------------------------
@@ -64,6 +66,8 @@ done
 FILTER="all"
 FILTER_OPTION=""
 AUTHORS=""
+VERBOSE=0
+AUTHOR_LIST=0
 
 usage_error() {
     echo "$1" >&2
@@ -106,6 +110,12 @@ while [[ $# -gt 0 ]]; do
         AUTHORS="${1#*=}"
         [[ -n "$AUTHORS" ]] || usage_error "--author needs a name, e.g. --author octocat"
         ;;
+    --author-list)
+        AUTHOR_LIST=1
+        ;;
+    --verbose)
+        VERBOSE=1
+        ;;
     --help|-h)
         cat <<EOF
 
@@ -117,7 +127,12 @@ Usage:
   gh dashboard --review         PRs you are a reviewer on (requested or reviewed)
   gh dashboard --author NAME    PRs authored by NAME (several: alice,bob)
   gh dashboard --all            Same as default
+  gh dashboard --author-list    List the authors of open PRs, with counts
+  gh dashboard --verbose        Show search totals and each fetch step
   gh dashboard --version        Print version
+
+--author-list and --verbose can be combined with the filters above,
+e.g. gh dashboard --review --author-list.
 
 Run it inside a clone of a GitHub repository.
 
@@ -488,9 +503,272 @@ PAGE_TO_PRS='
     }
 ]'
 
+# Light search: only number and author, 100 per request. Fast,
+# because GitHub doesn't compute mergeability or CI for it.
+# shellcheck disable=SC2016
+META_QUERY='
+query($q: String!, $first: Int!, $after: String) {
+  search(query: $q, type: ISSUE, first: $first, after: $after) {
+    issueCount
+    pageInfo { hasNextPage endCursor }
+    nodes { ... on PullRequest { number author { __typename login } } }
+  }
+}'
+
+
+# ------------------------------------------------------------
+# Progress bar and --verbose log
+#
+# Both go to stderr, so the table on stdout stays clean when
+# redirected. The bar is shown in a terminal; --verbose prints
+# one line per step instead.
+# ------------------------------------------------------------
+
+SHOW_BAR=0
+[[ -t 2 && "$VERBOSE" == 0 ]] && SHOW_BAR=1
+
+now() { perl -MTime::HiRes=time -e 'printf "%.2f", time'; }
+
+# Seconds since a now() timestamp, e.g. "2.4s".
+elapsed() { perl -e 'printf "%.1fs", $ARGV[1] - $ARGV[0]' "$1" "$(now)"; }
+
+vlog() {
+    if [[ "$VERBOSE" == 1 ]]; then echo " $*" >&2; fi
+    return 0
+}
+
+# progress DONE TOTAL
+progress() {
+    [[ "$SHOW_BAR" == 1 ]] || return 0
+    local current="$1" total="$2" width=30 filled
+    if [[ "$total" -le 0 ]]; then
+        printf '\r Fetching PRs… %d' "$current" >&2
+        return 0
+    fi
+    [[ "$current" -gt "$total" ]] && current="$total"
+    filled=$(( current * width / total ))
+    printf '\r Fetching PRs %s%s %d/%d' \
+        "$(printf '%*s' "$filled" '' | sed 's/ /█/g')" \
+        "$(printf '%*s' $(( width - filled )) '' | sed 's/ /░/g')" \
+        "$current" "$total" >&2
+}
+
+progress_clear() {
+    if [[ "$SHOW_BAR" == 1 ]]; then printf '\r\033[K' >&2; fi
+    return 0
+}
+
+
+# ------------------------------------------------------------
+# fetch_page QUERY SEARCH FIRST CURSOR
+#
+# One search page, up to 4 attempts, halving the page size
+# after each failure. Sets PAGE (the response), PAGE_FIRST (the
+# size that worked) and PAGE_TIME (with --verbose). Exits with
+# GitHub's error if every attempt fails.
+# ------------------------------------------------------------
+
+fetch_page() {
+    local query="$1" search="$2" first="$3" cursor="$4"
+    local attempt=1 started=""
+
+    while true; do
+
+        [[ "$VERBOSE" == 1 ]] && started=$(now)
+
+        if PAGE=$(gh api graphql \
+                -f query="$query" \
+                -f q="$search" \
+                -F first="$first" \
+                ${cursor:+-f after="$cursor"} 2>&1); then
+            PAGE_FIRST="$first"
+            PAGE_TIME=""
+            [[ "$VERBOSE" == 1 ]] && PAGE_TIME=$(elapsed "$started")
+            return 0
+        fi
+
+        if [[ "$attempt" -ge 4 ]]; then
+            progress_clear
+            echo
+            echo "${RED}Fetching PRs failed after $attempt attempts.${RESET}"
+            echo
+            echo "$PAGE" | tail -3
+            echo
+            exit 1
+        fi
+
+        attempt=$(( attempt + 1 ))
+        first=$(( first > 1 ? first / 2 : 1 ))
+        vlog "  request failed ($(echo "$PAGE" | tail -1)), retrying with $first"
+
+    done
+}
+
+
+# ------------------------------------------------------------
+# search_meta WITH_AUTHORS
+#
+# Sets QUERY_TOTALS: GitHub's match count for each search. With
+# WITH_AUTHORS=1 it also pages through every match (number and
+# author only) and sets META to [{number, login, bot}], one per
+# PR. Without, it asks for a single PR per search: just enough
+# to read the count.
+# ------------------------------------------------------------
+
+search_meta() {
+    local with_authors="$1" search cursor first=1 pages=""
+    [[ "$with_authors" == 1 ]] && first=100
+
+    QUERY_TOTALS=""
+
+    for search in "${SEARCH_QUERIES[@]}"; do
+
+        cursor=""
+
+        while true; do
+
+            fetch_page "$META_QUERY" "$search" "$first" "$cursor"
+
+            if [[ -z "$cursor" ]]; then
+                QUERY_TOTALS="$QUERY_TOTALS $(echo "$PAGE" | jq '.data.search.issueCount')"
+            fi
+
+            [[ "$with_authors" == 1 ]] || break
+
+            pages="$pages$(echo "$PAGE" | jq -c '[
+                .data.search.nodes[] | select(.number)
+                | {number, login: .author.login, bot: (.author.__typename == "Bot")}
+            ]')"$'\n'
+
+            cursor=$(echo "$PAGE" | jq -r '
+                .data.search.pageInfo
+                | if .hasNextPage then .endCursor else empty end
+            ')
+
+            [[ -z "$cursor" ]] && break
+
+        done
+
+    done
+
+    META=$(printf '%s' "$pages" | jq -s 'add // [] | unique_by(.number)')
+}
+
+# plural N WORD: "1 PR", "3 PRs".
+plural() {
+    if [[ "$1" == 1 ]]; then echo "$1 $2"; else echo "$1 $2s"; fi
+}
+
+# Authors in META with their PR counts, most PRs first, as
+# "count<TAB>name" lines. Deleted accounts come last.
+author_counts() {
+    echo "$META" | jq -r '
+        group_by(.login)
+        | map({login: .[0].login, bot: .[0].bot, n: length})
+        | sort_by(-.n, (.login == null), (.login // "" | ascii_downcase))
+        | .[]
+        | "\(.n)\t\(
+            if .login == null then "(deleted user)"
+            elif .bot then "\(.login) (bot)"
+            else .login end)"
+    '
+}
+
+
+# ------------------------------------------------------------
+# First pass: totals (for the progress bar) and, with --verbose
+# or --author-list, every PR's author. Skipped when nothing
+# would show it (output piped, no --verbose).
+# ------------------------------------------------------------
+
+NEED_AUTHORS=0
+[[ "$VERBOSE" == 1 || "$AUTHOR_LIST" == 1 ]] && NEED_AUTHORS=1
+
+TOTAL=0
+
+if [[ "$NEED_AUTHORS" == 1 || "$SHOW_BAR" == 1 ]]; then
+
+    for SEARCH_QUERY in "${SEARCH_QUERIES[@]}"; do
+        vlog "Search: $SEARCH_QUERY"
+    done
+
+    progress 0 0
+    search_meta "$NEED_AUTHORS"
+
+    # What the detail fetch will request: each search up to LIMIT.
+    for COUNT in $QUERY_TOTALS; do
+        TOTAL=$(( TOTAL + (COUNT < LIMIT ? COUNT : LIMIT) ))
+    done
+
+fi
+
+if [[ "$NEED_AUTHORS" == 1 ]]; then
+
+    MATCH_COUNT=$(echo "$META" | jq 'length')
+    AUTHOR_COUNT=$(author_counts | wc -l | tr -d ' ')
+
+    SUMMARY=$(author_counts | awk -F'\t' '
+        NR <= 5 { out = out (NR > 1 ? ", " : "") $2 " " $1 }
+        END     { if (NR > 5) out = out ", … (+" NR - 5 " more)"; print out }
+    ')
+
+    vlog "Found $(plural "$MATCH_COUNT" "open PR") by $(plural "$AUTHOR_COUNT" author)${SUMMARY:+: $SUMMARY}"
+
+    if [[ "$MATCH_COUNT" -gt "$LIMIT" && "$AUTHOR_LIST" == 0 ]]; then
+        vlog "Showing the newest $LIMIT (GH_DASHBOARD_LIMIT)"
+    fi
+
+fi
+
+
+# ------------------------------------------------------------
+# --author-list: print the authors and stop, without fetching
+# the (much slower) PR details.
+# ------------------------------------------------------------
+
+if [[ "$AUTHOR_LIST" == 1 ]]; then
+
+    progress_clear
+
+    echo
+    printf " %sOpen PR authors%s — %s%s%s\n" "$BOLD$CYAN" "$RESET" "$BOLD" "$REPO" "$RESET"
+
+    FILTER_NOTE=""
+    [[ -n "$FILTER_OPTION" && "$FILTER" != "all" ]] && FILTER_NOTE="   Filter: $FILTER_OPTION${AUTHORS:+ $AUTHORS}"
+    printf " %s%s by %s%s%s\n" "$DIM" "$(plural "$MATCH_COUNT" PR)" "$(plural "$AUTHOR_COUNT" author)" "$FILTER_NOTE" "$RESET"
+
+    echo
+    printf " %s%5s  %s%s\n" "$BOLD" "PRS" "AUTHOR" "$RESET"
+
+    author_counts | while IFS=$'\t' read -r COUNT NAME; do
+        printf " %5s  %s\n" "$COUNT" "$NAME"
+    done
+
+    echo
+
+    if [[ "$USE_COLOR" == 1 ]]; then
+        printf ' %s\n\n' "${DIM}Show one author's PRs: gh dashboard --author <name>${RESET}"
+    fi
+
+    exit 0
+
+fi
+
+
+# ------------------------------------------------------------
+# Detail fetch, BATCH PRs per request
+# ------------------------------------------------------------
+
 PAGE_SIZE="$BATCH"
 PAGES=""
 TOTAL_FETCHED=0
+BATCH_NUMBER=0
+FETCH_STARTED=""
+
+if [[ "$VERBOSE" == 1 ]]; then
+    FETCH_STARTED=$(now)
+    vlog "Fetching details, $BATCH PRs per request"
+fi
 
 for SEARCH_QUERY in "${SEARCH_QUERIES[@]}"; do
 
@@ -501,33 +779,13 @@ for SEARCH_QUERY in "${SEARCH_QUERIES[@]}"; do
 
         FIRST=$(( LIMIT - FETCHED < PAGE_SIZE ? LIMIT - FETCHED : PAGE_SIZE ))
 
-        [[ -t 2 ]] && printf '\r Fetching PRs… %d' "$TOTAL_FETCHED" >&2
+        progress "$TOTAL_FETCHED" "$TOTAL"
 
-        ATTEMPT=1
+        fetch_page "$PR_QUERY" "$SEARCH_QUERY" "$FIRST" "$CURSOR"
 
-        until PAGE=$(gh api graphql \
-                -f query="$PR_QUERY" \
-                -f q="$SEARCH_QUERY" \
-                -F first="$FIRST" \
-                ${CURSOR:+-f after="$CURSOR"} 2>&1); do
-
-            if [[ "$ATTEMPT" -ge 4 ]]; then
-                [[ -t 2 ]] && printf '\r\033[K' >&2
-                echo
-                echo "${RED}Fetching PRs failed after $ATTEMPT attempts.${RESET}"
-                echo
-                echo "$PAGE" | tail -3
-                echo
-                exit 1
-            fi
-
-            ATTEMPT=$(( ATTEMPT + 1 ))
-            PAGE_SIZE=$(( PAGE_SIZE > 1 ? PAGE_SIZE / 2 : 1 ))
-            FIRST=$(( FIRST < PAGE_SIZE ? FIRST : PAGE_SIZE ))
-
-        done
-
-        # A shrunk batch worked: grow back toward BATCH.
+        # After a failure the batch shrank: grow it back toward
+        # BATCH, doubling with each request that works.
+        [[ "$PAGE_FIRST" -lt "$FIRST" ]] && PAGE_SIZE="$PAGE_FIRST"
         PAGE_SIZE=$(( PAGE_SIZE * 2 < BATCH ? PAGE_SIZE * 2 : BATCH ))
 
         PAGE_PRS=$(echo "$PAGE" | jq -c "$PAGE_TO_PRS")
@@ -535,6 +793,9 @@ for SEARCH_QUERY in "${SEARCH_QUERIES[@]}"; do
         PAGE_COUNT=$(echo "$PAGE_PRS" | jq 'length')
         FETCHED=$(( FETCHED + PAGE_COUNT ))
         TOTAL_FETCHED=$(( TOTAL_FETCHED + PAGE_COUNT ))
+
+        BATCH_NUMBER=$(( BATCH_NUMBER + 1 ))
+        vlog "  batch $BATCH_NUMBER: $PAGE_COUNT PRs in $PAGE_TIME ($TOTAL_FETCHED${TOTAL:+/$TOTAL})"
 
         CURSOR=$(echo "$PAGE" | jq -r '
             .data.search.pageInfo
@@ -547,7 +808,11 @@ for SEARCH_QUERY in "${SEARCH_QUERIES[@]}"; do
 
 done
 
-[[ -t 2 ]] && printf '\r\033[K' >&2
+progress_clear
+
+if [[ "$VERBOSE" == 1 ]]; then
+    vlog "Fetched $TOTAL_FETCHED PRs in $(elapsed "$FETCH_STARTED")"
+fi
 
 if [[ "${#SEARCH_QUERIES[@]}" -gt 1 ]]; then
     # Several searches can return the same PR: keep one copy,

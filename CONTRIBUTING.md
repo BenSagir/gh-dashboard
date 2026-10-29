@@ -12,6 +12,7 @@ tests/
   test_cli.sh           options, settings, repo and account detection
   test_fetch.sh         search filters, batching, limit, retries
   test_render.sh        columns, statuses, alignment, colors, links
+  test_overview.sh      --author-list, --verbose and the totals pass
   test_platform.sh      Windows line endings, file hygiene
   fake-bin/gh           fake GitHub CLI used by the tests
   fixtures/states.json  sample PRs covering every status

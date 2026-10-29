@@ -28,6 +28,24 @@ Exporting `GH_TOKEN` affects only the dashboard's own process. It never runs
 
 ## Fetching PRs
 
+### First pass: totals and authors
+
+Before fetching the details, the dashboard can run a light version of the
+search that asks only for the number of matches (`issueCount`) and, if
+needed, each PR's number and author. GitHub answers it quickly because it
+doesn't compute mergeability or CI for it.
+
+| When | What it fetches |
+|---|---|
+| Output is a terminal | One PR per search, just to read the total for the progress bar |
+| `--verbose` or `--author-list` | Every match, 100 per request: number and author |
+| Output piped, no `--verbose` | Nothing; this pass is skipped |
+
+`--author-list` stops after this pass. Everything else continues with the
+detail fetch below.
+
+### Detail fetch
+
 PRs come from a GraphQL **search** query:
 
 ```

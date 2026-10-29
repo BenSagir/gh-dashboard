@@ -138,6 +138,7 @@ case "${1:-} ${2:-}" in
         jqlf -c --argjson first "$first" --argjson offset "${after:-0}" '
             (length) as $total
             | {data: {search: {
+                issueCount: ([.[] | select(.number)] | length),
                 pageInfo: {
                     hasNextPage: ($offset + $first < $total),
                     endCursor: (($offset + $first) | tostring)

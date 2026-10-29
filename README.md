@@ -59,8 +59,11 @@ gh extension upgrade dashboard
   commented and who hasn't reviewed yet, including teams.
 - **One merge verdict per PR**: draft, conflict, failing CI, changes
   requested, waiting for review, CI running, blocked or ready.
-- **Filters**: all open PRs, only yours, or only the ones waiting on your
-  review.
+- **Filters**: all open PRs, only yours, the ones you're reviewing, or a
+  given author's.
+- **Author overview**: `--author-list` shows who has open PRs and how many,
+  in a couple of seconds.
+- **Progress bar** with the real total, and `--verbose` to see each step.
 - **Handles big repos**: fetches in small batches and retries with smaller
   ones if GitHub times out, so hundreds of open PRs load without `HTTP 504`.
 - **Work and personal accounts**: if your active `gh` account can't see the
@@ -112,6 +115,8 @@ gh dashboard --author alice   # PRs opened by alice (or alice,bob)
 | `--mine` | PRs you authored |
 | `--review` | PRs you're a reviewer on: asked to review, or already reviewed |
 | `--author NAME` | PRs opened by NAME. Several: `--author alice,bob` |
+| `--author-list` | List who has open PRs, with counts (fast, no table) |
+| `--verbose` | Show the totals and each fetch step |
 | `--version`, `-v` | Print the version |
 | `--help`, `-h` | Print help |
 

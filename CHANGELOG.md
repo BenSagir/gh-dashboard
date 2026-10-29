@@ -6,6 +6,19 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+## [1.3.0] - 2026-10-29
+
+### Added
+
+- Progress bar with the real total while fetching (`Fetching PRs ███░░ 40/57`),
+  in place of the plain counter.
+- `--verbose`: prints the search, how many open PRs there are and by whom,
+  then one line per fetched batch with its time, retries, and the total
+  time. Written to stderr, so the table output is unchanged.
+- `--author-list`: lists everyone with open PRs and their counts, without
+  fetching the PR details, so it finishes in a second or two. Works with
+  `--mine`, `--review` and `--author`.
+
 ## [1.2.0] - 2026-10-22
 
 ### Added
@@ -50,7 +63,8 @@ First public release.
   output is piped.
 - Offline test suite and CI on Linux, macOS (bash 3.2) and Windows.
 
-[Unreleased]: https://github.com/BenSagir/gh-dashboard/compare/v1.2.0...HEAD
+[Unreleased]: https://github.com/BenSagir/gh-dashboard/compare/v1.3.0...HEAD
+[1.3.0]: https://github.com/BenSagir/gh-dashboard/compare/v1.2.0...v1.3.0
 [1.2.0]: https://github.com/BenSagir/gh-dashboard/compare/v1.1.0...v1.2.0
 [1.1.0]: https://github.com/BenSagir/gh-dashboard/compare/v1.0.0...v1.1.0
 [1.0.0]: https://github.com/BenSagir/gh-dashboard/releases/tag/v1.0.0
