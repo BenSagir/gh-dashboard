@@ -204,3 +204,18 @@ test_gives_up_after_four_failed_attempts() {
     assert_contains "HTTP 504: 504 Gateway Timeout"
     assert_eq "$(graphql_sizes)" "20 10 5 2" "batch sizes"
 }
+
+test_warnings_on_stderr_do_not_break_parsing() {
+    # gh can print warnings to stderr on a successful request; only
+    # stdout is the response. (CI once flaked on exactly this.)
+    export FAKE_STDERR_NOISE=1
+    dashboard
+    assert_status 0
+    assert_contains "PRs: 14"
+    dashboard --author-list
+    assert_status 0
+    assert_contains "14 PRs by 7 authors"
+    GH_DASHBOARD_PROGRESS=1 dashboard
+    assert_status 0
+    assert_contains "PRs: 14"
+}

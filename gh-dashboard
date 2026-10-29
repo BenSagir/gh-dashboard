@@ -663,16 +663,20 @@ animate_frame() {
         "$TOTAL"
 }
 
-# Background requests write here. Removed after the fetch, before
-# exiting on an error, and on Ctrl-C.
+# Temp files: a background request's response (PAGE_FILE) and each
+# request's stderr (ERR_FILE). Removed after the fetch, before
+# exiting on an error, after --author-list, and on Ctrl-C.
 #
 # Deliberately no "trap ... EXIT": in bash 3.2 an EXIT trap makes a
 # script that dies on an error (e.g. an unbound variable under set
 # -u) exit with status 0, hiding the failure.
 PAGE_FILE=""
+ERR_FILE=""
 cleanup() {
     if [[ -n "$PAGE_FILE" ]]; then rm -f "$PAGE_FILE"; fi
+    if [[ -n "$ERR_FILE" ]]; then rm -f "$ERR_FILE"; fi
     PAGE_FILE=""
+    ERR_FILE=""
     return 0
 }
 trap 'cleanup; exit 130' INT
@@ -710,12 +714,17 @@ fetch_page() {
 
         [[ "$VERBOSE" == 1 ]] && started=$(now)
 
+        # Only stdout is the response. gh can print warnings to stderr
+        # even when a request works, so stderr goes to its own file and
+        # is only used for error messages.
+        [[ -n "$ERR_FILE" ]] || ERR_FILE=$(mktemp)
+
         if [[ "$ANIMATE" == 1 ]]; then
 
             # Request in the background; animate until it's done.
             [[ -n "$PAGE_FILE" ]] || PAGE_FILE=$(mktemp)
             start_ms=$(now_ms)
-            run_search "$query" "$search" "$first" "$cursor" > "$PAGE_FILE" 2>&1 &
+            run_search "$query" "$search" "$first" "$cursor" > "$PAGE_FILE" 2> "$ERR_FILE" &
             pid=$!
             now_ms_value="$start_ms"
             while kill -0 "$pid" 2>/dev/null; do
@@ -729,9 +738,11 @@ fetch_page() {
 
         else
 
-            if PAGE=$(run_search "$query" "$search" "$first" "$cursor" 2>&1); then ok=1; else ok=0; fi
+            if PAGE=$(run_search "$query" "$search" "$first" "$cursor" 2> "$ERR_FILE"); then ok=1; else ok=0; fi
 
         fi
+
+        PAGE_ERR=$(cat "$ERR_FILE")
 
         if [[ "$ok" == 1 ]]; then
             PAGE_FIRST="$first"
@@ -746,14 +757,14 @@ fetch_page() {
             echo
             echo "${RED}Fetching PRs failed after $attempt attempts.${RESET}"
             echo
-            echo "$PAGE" | tail -3
+            echo "${PAGE_ERR:-$PAGE}" | tail -3
             echo
             exit 1
         fi
 
         attempt=$(( attempt + 1 ))
         first=$(( first > 1 ? first / 2 : 1 ))
-        vlog "  request failed ($(echo "$PAGE" | tail -1)), retrying with $first"
+        vlog "  request failed ($(echo "${PAGE_ERR:-$PAGE}" | tail -1)), retrying with $first"
 
     done
 }
@@ -907,6 +918,7 @@ if [[ "$AUTHOR_LIST" == 1 ]]; then
         printf ' %s\n\n' "${DIM}Show one author's PRs: gh dashboard --author <name>${RESET}"
     fi
 
+    cleanup
     exit 0
 
 fi

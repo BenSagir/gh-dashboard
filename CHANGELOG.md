@@ -16,6 +16,10 @@ All notable changes to this project are documented here. The format follows
   using `gh dashboard` would have seen a success. Cleanup is now explicit,
   with Ctrl-C and `kill` still removing the temp file, and errors keep
   their non-zero status.
+- A warning printed by `gh` on stderr during a successful request was mixed
+  into the response and broke parsing (`jq: parse error`). Only stdout is
+  parsed now; stderr is kept for error messages. Found through a CI run
+  that failed when the test suite's fake `gh` printed such a message.
 
 ## [1.4.1] - 2026-10-29
 

@@ -12,6 +12,7 @@
 #   FAKE_PRS_REVIEWED   used instead when the query has reviewed-by:
 #   FAKE_FAIL_FIRST   fail the first N graphql calls with HTTP 504
 #   FAKE_FAIL_CALLS   fail these graphql calls (e.g. "2 3") with HTTP 504
+#   FAKE_STDERR_NOISE print a warning to stderr on successful graphql calls
 #   FAKE_DELAY        seconds each graphql call takes (e.g. 0.5)
 #   FAKE_DELAY_PER_PR extra seconds per requested PR, detail requests only
 #   FAKE_SLOW_CALLS   these graphql calls (e.g. "3") also take FAKE_SLOW_DELAY
@@ -130,7 +131,10 @@ case "${1:-} ${2:-}" in
 
         # Simulated latency: fixed, plus per PR for detail requests
         # (the ones asking for mergeability), plus chosen slow calls.
-        delay=$(field query "$@" | grep -q mergeStateStatus && echo "${FAKE_DELAY_PER_PR:-0}" || echo 0)
+        # (no "| grep -q" here: it can make bash 3.2 print "write error:
+        # Broken pipe" to stderr, which is how CI once flaked)
+        delay=0
+        if [[ "$(field query "$@")" == *mergeStateStatus* ]]; then delay="${FAKE_DELAY_PER_PR:-0}"; fi
         delay=$(awk -v a="${FAKE_DELAY:-0}" -v p="$delay" -v n="$first" -v s="$( [[ " ${FAKE_SLOW_CALLS:-} " == *" $calls "* ]] && echo "${FAKE_SLOW_DELAY:-0}" || echo 0 )" 'BEGIN { print a + p * n + s }')
         sleep "$delay"
 
@@ -143,6 +147,10 @@ case "${1:-} ${2:-}" in
         prs="${FAKE_PRS:?FAKE_PRS must be set}"
         [[ "$q" == *review-requested:* && -n "${FAKE_PRS_REQUESTED:-}" ]] && prs="$FAKE_PRS_REQUESTED"
         [[ "$q" == *reviewed-by:* && -n "${FAKE_PRS_REVIEWED:-}" ]] && prs="$FAKE_PRS_REVIEWED"
+
+        if [[ -n "${FAKE_STDERR_NOISE:-}" ]]; then
+            echo "warning: this is a harmless message on stderr" >&2
+        fi
 
         # Cursors are plain offsets into the fixture array.
         jqlf -c --argjson first "$first" --argjson offset "${after:-0}" '
