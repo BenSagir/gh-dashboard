@@ -102,7 +102,10 @@ shellcheck -x gh-dashboard tests/run.sh tests/lib.sh tests/test_*.sh tests/fake-
 
 1. Update `VERSION` in `gh-dashboard` and move the "Unreleased" changes in
    `CHANGELOG.md` under the new version.
-2. Commit, then tag and publish:
+2. Commit and push to `main`, then **wait for CI to pass on all three
+   systems** (Windows takes about 30 minutes). CI runs the tests on bash 3.2
+   and under UTF-8 locales, which a local run may not.
+3. Tag and publish:
 
    ```bash
    git tag v1.2.3

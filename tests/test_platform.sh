@@ -103,3 +103,10 @@ test_works_under_a_utf8_locale() {
     grep -q 'Fetching PRs' "$TEST_TMP/stderr" || fail "under $loc: progress bar not drawn"
     assert_eq "$(stable_output)" "$expected" "table under $loc"
 }
+
+test_script_sets_no_exit_trap() {
+    # In bash 3.2 an EXIT trap turns a crash under set -u into exit
+    # status 0. Clean up explicitly instead.
+    if grep -nE "^[^#]*trap .*EXIT" "$SCRIPT"; then fail "gh-dashboard sets an EXIT trap"; fi
+    return 0
+}

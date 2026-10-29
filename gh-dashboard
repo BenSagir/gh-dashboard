@@ -28,7 +28,7 @@ set -euo pipefail
 # Docs: https://github.com/BenSagir/gh-dashboard
 # ============================================================
 
-VERSION="1.4.1"
+VERSION="1.4.2"
 
 
 # ------------------------------------------------------------
@@ -663,13 +663,20 @@ animate_frame() {
         "$TOTAL"
 }
 
-# Background requests write here; removed on exit.
+# Background requests write here. Removed after the fetch, before
+# exiting on an error, and on Ctrl-C.
+#
+# Deliberately no "trap ... EXIT": in bash 3.2 an EXIT trap makes a
+# script that dies on an error (e.g. an unbound variable under set
+# -u) exit with status 0, hiding the failure.
 PAGE_FILE=""
 cleanup() {
     if [[ -n "$PAGE_FILE" ]]; then rm -f "$PAGE_FILE"; fi
+    PAGE_FILE=""
     return 0
 }
-trap cleanup EXIT
+trap 'cleanup; exit 130' INT
+trap 'cleanup; exit 143' TERM
 
 # run_search QUERY SEARCH FIRST CURSOR: one search request.
 run_search() {
@@ -735,6 +742,7 @@ fetch_page() {
 
         if [[ "$attempt" -ge 4 ]]; then
             progress_clear
+            cleanup
             echo
             echo "${RED}Fetching PRs failed after $attempt attempts.${RESET}"
             echo
@@ -977,6 +985,7 @@ for SEARCH_QUERY in "${SEARCH_QUERIES[@]}"; do
 done
 
 progress_clear
+cleanup
 
 if [[ "$VERBOSE" == 1 ]]; then
     vlog "Fetched $TOTAL_FETCHED PRs in $(elapsed "$FETCH_STARTED")"

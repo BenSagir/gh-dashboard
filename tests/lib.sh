@@ -122,6 +122,12 @@ fail() {
 
 assert_status() {
     [[ "$STATUS" == "$1" ]] || fail "expected exit status $1, got $STATUS"
+    # A bash runtime error ("gh-dashboard: line N: ...") means the
+    # script crashed, even if the exit status didn't show it.
+    if [[ "$1" == 0 && "$OUTPUT" == *"$SCRIPT: line "* ]]; then
+        fail "the script hit a bash error"
+    fi
+    return 0
 }
 
 assert_contains() {

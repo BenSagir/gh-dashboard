@@ -6,6 +6,17 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+## [1.4.2] - 2026-10-29
+
+### Fixed
+
+- When the dashboard crashed (as 1.4.0 did under UTF-8 locales), it still
+  exited with status 0, because of the temp-file cleanup handler (an EXIT
+  trap; bash 3.2 resets the status before running it). Scripts and CI
+  using `gh dashboard` would have seen a success. Cleanup is now explicit,
+  with Ctrl-C and `kill` still removing the temp file, and errors keep
+  their non-zero status.
+
 ## [1.4.1] - 2026-10-29
 
 ### Fixed
@@ -89,7 +100,8 @@ First public release.
   output is piped.
 - Offline test suite and CI on Linux, macOS (bash 3.2) and Windows.
 
-[Unreleased]: https://github.com/BenSagir/gh-dashboard/compare/v1.4.1...HEAD
+[Unreleased]: https://github.com/BenSagir/gh-dashboard/compare/v1.4.2...HEAD
+[1.4.2]: https://github.com/BenSagir/gh-dashboard/compare/v1.4.1...v1.4.2
 [1.4.1]: https://github.com/BenSagir/gh-dashboard/compare/v1.4.0...v1.4.1
 [1.4.0]: https://github.com/BenSagir/gh-dashboard/compare/v1.3.0...v1.4.0
 [1.3.0]: https://github.com/BenSagir/gh-dashboard/compare/v1.2.0...v1.3.0

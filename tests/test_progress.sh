@@ -39,6 +39,7 @@ test_progress_bar_never_moves_backwards() {
     export GH_DASHBOARD_PROGRESS=1 FAKE_DELAY=0.6 FAKE_FAIL_CALLS="3 4"
     GH_DASHBOARD_BATCH=5 dashboard
     assert_status 0
+    [[ -n "$(progress_frames)" ]] || fail "no progress frames drawn"
     progress_frames | awk '
         $1 < e || $2 < c { print "went back at frame " NR ": " $0; bad = 1 }
         { e = $1; c = $2 }
